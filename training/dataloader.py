@@ -1,10 +1,15 @@
 import os
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 import random
-from typing import Optional, Tuple
+from logging import getLogger
+from typing import Optional, Tuple, Any, List
+from torch.utils.data import random_split
+
+
+logger = getLogger(__name__)
 
 
 class SegmentationTensorDataset(Dataset):
@@ -109,21 +114,48 @@ def get_dataloader(
     augment: bool = True,
     normalize: bool = True,
     image_size: Tuple[int, int] = (256, 256),
-) -> DataLoader:
+    split: bool = True,
+    val_ratio: float = 0.1,
+    test_ratio: float = 0.1,
+    min_samples_for_split: int = 12,
+    seed: int = 42,
+) -> tuple:
+    """
+    Returns (train_loader, val_loader, test_loader), or (single_loader, None, None) if not enough data.
+    """
     dataset = SegmentationTensorDataset(
         dataset_root=dataset_path,
         augment=augment,
         normalize=normalize,
         image_size=image_size,
     )
+    n_total = len(dataset)
+    if (not split) or (n_total < min_samples_for_split):
+        loader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            pin_memory=True,
+        )
+        return loader, None, None
 
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=True
-    )
+    n_val = max(1, int(val_ratio * n_total))
+    n_test = max(1, int(test_ratio * n_total))
+    n_train = n_total - n_val - n_test
 
-    return loader
+    if n_train < 3:
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+        return loader, None, None
+
+    g = torch.Generator().manual_seed(seed)
+    train_set, val_set, test_set = random_split(dataset, [n_train, n_val, n_test], generator=g)
+
+    train_loader = DataLoader(
+        train_set, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+    val_loader = DataLoader(
+        val_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    test_loader = DataLoader(
+        test_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    return train_loader, val_loader, test_loader
 
