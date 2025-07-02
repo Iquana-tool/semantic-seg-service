@@ -36,7 +36,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     job_id = req.model_id
     dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
     log_dir = os.path.join(LOG_PATH, job_id)
-    model_save_path = os.path.join(MODEL_PATH, f"{job_id}.pt")
+    model_save_path = os.path.join(MODEL_PATH, f"{req.model_identifier}_{job_id}.pt")
 
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(MODEL_PATH, exist_ok=True)
