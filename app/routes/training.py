@@ -6,12 +6,15 @@ from app.schemas.training import TrainingRequest
 from training.dataloader import get_dataloader
 from models import MODEL_REGISTRY
 from paths import DATA_PATH, MODEL_PATH, LOG_PATH, JOBS_PATH
+from logging import getLogger
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from training.metrics import dice_coeff, iou_score
 from training.early_stopping import EarlyStopping
+from models import load_model_from_checkpoint_path
 
 router = APIRouter(prefix="/train", tags=["training"])
+logger = getLogger(__name__)
 
 
 def save_job_status(job_id, status: str, result: str = "", extra: dict = None):
@@ -37,7 +40,6 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
     log_dir = os.path.join(LOG_PATH, job_id)
     model_save_path = os.path.join(MODEL_PATH, f"{req.model_identifier}_{job_id}.pt")
-
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(MODEL_PATH, exist_ok=True)
     os.makedirs(JOBS_PATH, exist_ok=True)
@@ -59,11 +61,20 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 seed=42,
             )
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            model = MODEL_REGISTRY[req.model_identifier](num_classes=req.num_classes, in_channels=req.in_channels)
-            model = model.to(device)
             criterion = torch.nn.CrossEntropyLoss()
             optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
             writer = SummaryWriter(log_dir=log_dir)
+
+            start_epoch = 1
+            if not req.restart and os.path.exists(model_save_path):
+                model, checkpoint = load_model_from_checkpoint_path(model_save_path, device=device, eval_mode=False)
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                start_epoch = checkpoint.get("epoch", 1)
+                logger.info(f"Resuming training of {req.model_identifier} from epoch {start_epoch}.")
+            elif not req.restart and not os.path.exists(model_save_path):
+                logger.warning(f"Checkpoint {model_save_path} does not exist. Starting training from scratch.")
+                model = MODEL_REGISTRY[req.model_identifier](num_classes=req.num_classes, in_channels=req.in_channels)
+                model = model.to(device)
 
             best_dice, best_epoch = 0.0, 0
             early_stopping = EarlyStopping(patience=8)
@@ -92,17 +103,34 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 if val_dice > best_dice:
                     best_dice = val_dice
                     best_epoch = epoch
-                    torch.save(model.state_dict(), model_save_path)
-                if early_stopping.step(val_dice):
+                    checkpoint_obj = {
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "epoch": epoch,
+                    }
+                    torch.save(checkpoint_obj, model_save_path)
+                    # Save meta info
+                    with open(model_save_path + ".json", "w") as f:
+                        json.dump({
+                            "model_identifier": req.model_identifier,
+                            "num_classes": req.num_classes,
+                            "in_channels": req.in_channels,
+                            "image_size": req.image_size,
+                            "epoch": epoch,
+                            "job_id": job_id,
+                            "dataset_id": req.dataset_id,
+                            "best_val_dice": best_dice,
+                        }, f, indent=2)
+                if req.early_stopping and early_stopping.step(val_dice):
                     break
 
             writer.close()
 
-            # Optional: Evaluate on test if available
+            # Evaluate on test set if available
             test_dice, test_iou = None, None
             if test_loader is not None:
-                model.load_state_dict(torch.load(model_save_path, map_location=device))
-                model.eval()
+                # If using advanced checkpoint, need to load model_state_dict out of dict
+                model = load_model_from_checkpoint_path(model_save_path, device=device, eval_model=True)
                 test_dice, test_iou = run_test(model, test_loader, device)
 
             status_extra = {

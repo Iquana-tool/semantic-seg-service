@@ -10,7 +10,7 @@ class TrainingRequest(BaseModel):
     model_identifier: str = Field(default="unet", description="Identifier for the model to be trained. "
                                                       "Should be got by GET /models/get_trainable_models")
     model_id_db: int = Field(description="ID of the model in the database. Must be provided.")
-    restart: bool = Field(default=False, description="Whether to restart training from scratch. If set to True, "
+    restart: bool = Field(default=True, description="Whether to restart training from scratch. If set to True, "
                                                      "the model will be trained from scratch, else it will continue "
                                                      "training from the last checkpoint.")
     epochs: int = Field(default=50, description="Number of epochs to train the model.")
