@@ -1,11 +1,15 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi import UploadFile, File, Form
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from logging import getLogger
 from models import load_model_from_id, load_metadata_from_id
 from app.schemas.segment import B64SegmentationRequest
 from app.util.image_conversions import *
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import torch
+from models import load_model_from_id
+from PIL import Image
+from io import BytesIO
+import zipfile
+import os
 
 
 router = APIRouter()
@@ -56,6 +60,17 @@ async def segment_batch(
     model_id: str = Form(...),
     files: list[UploadFile] = File(...)
 ):
+    """ Segment a batch of images using the specified model.
+    Args:
+        model_id (str): The ID of the model to use for segmentation.
+        files (list[UploadFile]): List of image files to segment. These will be uploaded as multipart/form-data.
+
+    Returns:
+        StreamingResponse: A ZIP file containing the segmentation masks for each input image.
+    """
+    if len(files) > 10:
+        logger.warning(f"Uploading {len(files)} files before segmentation. This can take a while. Consider smaller "
+                       f"batches.")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     try:
         model = load_model_from_id(model_id, device, eval_mode=True, return_metadata=True)
@@ -86,12 +101,21 @@ async def segment_batch(
         pred = torch.argmax(logits, dim=1)  # [N, H, W]
     masks_np = pred.cpu().numpy()  # shape: (N, H, W)
 
-    masks_b64 = [mask_to_base64(mask) for mask in masks_np]
+    # Prepare ZIP in memory
+    zip_buf = BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as mask_zip:
+        for fname, mask_np in zip(filenames, masks_np):
+            mask_img = Image.fromarray(mask_np.astype('uint8'))
+            mask_fname = os.path.splitext(fname)[0] + "_mask.png"
+            mask_bytes = BytesIO()
+            mask_img.save(mask_bytes, format='PNG')
+            mask_bytes.seek(0)
+            mask_zip.writestr(mask_fname, mask_bytes.read())
+    zip_buf.seek(0)
 
-    return {
-        "count": len(masks_b64),
-        "results": [
-            {"filename": name, "mask_b64": m, "mask_shape": masks_np[i].shape}
-            for i, (name, m) in enumerate(zip(filenames, masks_b64))
-        ]
-    }
+    # Return zip as file download
+    return StreamingResponse(
+        zip_buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="masks.zip"'}
+    )
