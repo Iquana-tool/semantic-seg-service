@@ -5,7 +5,7 @@ from models import MODEL_REGISTRY
 from paths import MODEL_PATH
 
 
-class SegmentationRequest(BaseModel):
+class B64SegmentationRequest(BaseModel):
     """ Model for validating the segmentation request. """
     image_b64: int = Field(..., description="Base64 encoded image to segment.")
     model_id: int = Field(..., description="Identifier of the segmentation model to use. Must be a trained model, whose "
