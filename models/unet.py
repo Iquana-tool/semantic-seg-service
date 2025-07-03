@@ -17,7 +17,14 @@ class DoubleConv(nn.Module):
         return self.double_conv(x)
 
 class UNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=2, features=[64, 128, 256, 512]):
+    def __init__(self, in_channels=3, num_classes=2, features=[64, 128, 256, 512], **kwargs):
+        """
+        UNet model for image segmentation.
+        :param in_channels: Number of input channels (e.g., 3 for RGB images).
+        :param num_classes: Number of output channels (e.g., number of classes for segmentation).
+        :param features: Number of features in each layer of the UNet.
+        :param kwargs: To allow for future extensions without breaking changes and flexibility with other models.
+        """
         super().__init__()
         self.downs = nn.ModuleList()
         self.ups = nn.ModuleList()
@@ -31,7 +38,7 @@ class UNet(nn.Module):
             self.ups.append(nn.ConvTranspose2d(feature*2, feature, kernel_size=2, stride=2))
             self.ups.append(DoubleConv(feature*2, feature))
         self.bottleneck = DoubleConv(features[-1], features[-1]*2)
-        self.final_conv = nn.Conv2d(features[0], out_channels, 1)
+        self.final_conv = nn.Conv2d(features[0], num_classes, 1)
 
     def forward(self, x):
         skip_connections = []
@@ -52,4 +59,4 @@ class UNet(nn.Module):
 
 def get_unet(num_classes=2, in_channels=3):
     """Easy function for model registry"""
-    return UNet(in_channels=in_channels, out_channels=num_classes)
+    return UNet(in_channels=in_channels, num_classes=num_classes)
