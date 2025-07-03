@@ -119,3 +119,63 @@ async def segment_batch(
         media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="masks.zip"'}
     )
+
+
+@router.post("/segment_batch_local")
+async def segment_batch_local(model_id: str, local_file_paths: list[str], local_save_paths: list[str]):
+    """
+    Segment a batch of images using the specified model with local file paths.
+
+    Args:
+        model_id (str): The ID of the model to use for segmentation.
+        local_file_paths (list[str]): List of local file paths to segment. This requires the segmentation service to have
+            access to the local filesystem where the images are stored.
+
+    Returns:
+        StreamingResponse: A ZIP file containing the segmentation masks for each input image.
+    """
+    # Sort both lists to ensure they match
+    if len(local_file_paths) != len(local_save_paths):
+        raise HTTPException(status_code=400, detail="Number of input files and save paths must match.")
+    local_file_paths.sort()
+    local_save_paths.sort()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    try:
+        model = load_model_from_id(model_id, device, eval_mode=True, return_metadata=True)
+        meta = load_metadata_from_id(model_id)
+        image_size = meta.get("image_size", (256, 256))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not load model: {e}")
+
+    img_tensors = []
+    filenames = []
+    for path in local_file_paths:
+        try:
+            pil_img = Image.open(path).convert('RGB')
+            img_tensors.append(preprocess_image(pil_img, image_size=image_size))
+            filenames.append(os.path.basename(path))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Error reading {path}: {e}")
+
+    if not img_tensors:
+        raise HTTPException(status_code=400, detail="No valid images provided.")
+
+    batch = torch.cat(img_tensors, dim=0).to(device)  # [N, C, H, W]
+    with torch.no_grad():
+        logits = model(batch)
+        pred = torch.argmax(logits, dim=1)
+    masks_np = pred.cpu().numpy()
+
+    # Save masks to the specified local paths
+    for mask_np, save_path, img_path in zip(masks_np, local_save_paths, local_file_paths):
+        mask_img = Image.fromarray(mask_np.astype('uint8'))
+        # Resize the mask to fit the original image size
+        original_img = Image.open(img_path)
+        mask_img = mask_img.resize(original_img.size, Image.NEAREST)
+        mask_img.save(save_path)
+    return {
+        "success": True,
+        "message": f"Segmentation completed for {len(local_save_paths)} images.",
+        "saved_paths": local_save_paths
+    }
