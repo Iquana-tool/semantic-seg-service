@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from logging import getLogger
-from app.routes import data, training
+from app.routes import data, training, models, segment
 
 logger = getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -16,7 +16,7 @@ def create_app():
     load_dotenv()
 
     # Get allowed origins from environment variable
-    allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000").split(",")
     logger.debug(f"Allowed origins: {allowed_origins}")
 
     app = FastAPI(
@@ -36,6 +36,8 @@ def create_app():
 
     app.include_router(data.router)
     app.include_router(training.router)
+    app.include_router(models.router)
+    app.include_router(segment.router)
 
     # Root endpoint
     @app.get("/")
