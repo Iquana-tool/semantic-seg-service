@@ -5,12 +5,12 @@ from fastapi import APIRouter, UploadFile, File
 from models import MODEL_REGISTRY
 from paths import MODEL_PATH
 
-router = APIRouter("/models", tags=["models"])
+router = APIRouter(prefix="/models", tags=["models"])
 logger = getLogger(__name__)
 
 
-@router.get("/get_trainable_models")
-async def get_trainable_models():
+@router.get("/get_trainable_base_models")
+async def get_trainable_base_models():
     """Retrieve all available segmentation models."""
     logger.debug("Fetching available segmentation models.")
     # Get the models from the registry, excluding the 'getter' key
