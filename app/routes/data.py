@@ -1,19 +1,20 @@
 import os.path
 from logging import getLogger
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Form
 from paths import DATA_PATH
 import cv2 as cv
 import numpy as np
 import torch
-from torchvision import transforms
-from io import BytesIO
 
-router = APIRouter("/data", tags=["data"])
+router = APIRouter(prefix="/data", tags=["data"])
 logger = getLogger(__name__)
 
 
 @router.post("/upload_file_to_dataset")
-async def upload_file(dataset_id: int, is_image: bool, file: UploadFile = File(...), filename: str = None):
+async def upload_file(dataset_id: int = Form(...),
+                      is_image: bool = Form(...),
+                      file: UploadFile = File(...),
+                      filename: str = Form(None)):
     """Upload a single image file to a dataset and save it as a PyTorch tensor."""
 
     # Compute target .pt path
@@ -47,8 +48,8 @@ async def upload_file(dataset_id: int, is_image: bool, file: UploadFile = File(.
 @router.post("/upload_dataset")
 async def upload_dataset(dataset_id: int, images: list[UploadFile] = File(...), masks: list[UploadFile] = File(...)):
     """Upload multiple image and mask files to a dataset and save them as PyTorch tensors."""
-    img_dict = {file.filename.split()[0]: file for file in images}
-    mask_dict = {file.filename.split()[0]: file for file in masks}
+    img_dict = {file.filename.rsplit(".", 1)[0]: file for file in images}
+    mask_dict = {file.filename.rsplit(".", 1)[0]: file for file in masks}
     uploaded_files = 0
     for i, (name, img) in enumerate(img_dict.items()):
         if name not in mask_dict:
