@@ -4,7 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from logging import getLogger
-from app.routes import data, training, models, segment
+from app.routes import data, training, models, segment, router
+from paths import DATA_PATH, MODEL_PATH, LOG_PATH, JOBS_PATH
 
 logger = getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -34,10 +35,16 @@ def create_app():
         allow_headers=["*"],
     )
 
+    app.include_router(router)
     app.include_router(data.router)
     app.include_router(training.router)
     app.include_router(models.router)
     app.include_router(segment.router)
+
+    os.makedirs(DATA_PATH, exist_ok=True)
+    os.makedirs(MODEL_PATH, exist_ok=True)
+    os.makedirs(LOG_PATH, exist_ok=True)
+    os.makedirs(JOBS_PATH, exist_ok=True)
 
     # Root endpoint
     @app.get("/")
