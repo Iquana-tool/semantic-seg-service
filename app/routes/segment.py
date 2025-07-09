@@ -12,7 +12,7 @@ import zipfile
 import os
 
 
-router = APIRouter()
+router = APIRouter(prefix="/segment", tags=["segment"])
 logger = getLogger(__name__)
 
 
