@@ -29,7 +29,7 @@ async def upload_file(dataset_id: int = Form(...),
 
     # Convert to NumPy using OpenCV from memory
     # Read masks as grayscale and images as normal
-    flag = cv.IMREAD_UNCHANGED if is_image else cv.IMREAD_GRAYSCALE
+    flag = cv.IMREAD_COLOR_RGB if is_image else cv.IMREAD_GRAYSCALE
     img_arr = cv.imdecode(np.frombuffer(contents, np.uint8), flag)
     if img_arr is None:
         return {"success": False, "message": "Could not decode image file."}
@@ -39,7 +39,13 @@ async def upload_file(dataset_id: int = Form(...),
     if is_image and tensor.ndim == 3:
         tensor = tensor.permute(2, 0, 1)  # HWC → CHW
     # Save as .pt
-    tensor = tensor.to(dtype=torch.long)
+    if is_image:
+        tensor = torch.div(tensor, 255)
+        tensor = tensor.to(dtype=torch.float32)
+    else:
+        tensor = tensor.to(dtype=torch.long)
+    if not is_image:
+        print(tensor.unique())
     torch.save(tensor, tensor_path)
 
     return {"success": True, "message": f"Tensor saved to {tensor_path}"}

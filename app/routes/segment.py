@@ -1,3 +1,4 @@
+import cv2
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from logging import getLogger
 from models import load_model_from_id, load_metadata_from_id
@@ -10,6 +11,7 @@ from PIL import Image
 from io import BytesIO
 import zipfile
 import os
+import plotly.express as px
 
 
 router = APIRouter(prefix="/segment", tags=["segment"])
@@ -71,9 +73,9 @@ async def segment_batch(
     if len(files) > 10:
         logger.warning(f"Uploading {len(files)} files before segmentation. This can take a while. Consider smaller "
                        f"batches.")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cpu"
     try:
-        model = load_model_from_id(model_id, device, eval_mode=True, return_metadata=True)
+        model, chkpt = load_model_from_id(model_id, device, eval_mode=True)
         meta = load_metadata_from_id(model_id)
         image_size = meta.get("image_size", (256,256))
     except Exception as e:
@@ -82,11 +84,14 @@ async def segment_batch(
     # Read and preprocess all images into a batch
     img_tensors = []
     filenames = []
+    og_shapes = []
     for file in files:
         try:
             img_bytes = await file.read()
-            pil_img = Image.open(BytesIO(img_bytes)).convert('RGB')
-            img_tensors.append(preprocess_image(pil_img, image_size=image_size))
+            img_arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+            og_shapes.append(img_arr.shape[1:])
+            processed_img_tensor = preprocess_image(img_arr, image_size=image_size)
+            img_tensors.append(processed_img_tensor.to(dtype=torch.float32))
             filenames.append(file.filename)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Error reading {file.filename}: {e}")
@@ -95,21 +100,22 @@ async def segment_batch(
         raise HTTPException(status_code=400, detail="No valid images provided.")
 
     batch = torch.cat(img_tensors, dim=0).to(device)  # [N, C, H, W]
-
-    with torch.no_grad():
-        logits = model(batch)  # [N, num_classes, H, W]
-        pred = torch.argmax(logits, dim=1)  # [N, H, W]
+    logits = model(batch)  # [N, num_classes, H, W]
+    pred = torch.argmax(logits, dim=1)  # [N, H, W]
     masks_np = pred.cpu().numpy()  # shape: (N, H, W)
-
+    print(np.unique(masks_np))
+    for mask in masks_np:
+        mask_img = mask
+        fig = px.imshow(mask_img)
+        fig.show()
     # Prepare ZIP in memory
     zip_buf = BytesIO()
     with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as mask_zip:
         for fname, mask_np in zip(filenames, masks_np):
-            mask_img = Image.fromarray(mask_np.astype('uint8'))
-            mask_bytes = BytesIO()
-            mask_img.save(mask_bytes, format='PNG')
-            mask_bytes.seek(0)
-            mask_zip.writestr(fname, mask_bytes.read())
+            success, encoded_img = cv2.imencode('.png', mask_np.astype(np.uint8))
+            if not success:
+                raise RuntimeError("cv2.imencode failed!")
+            mask_zip.writestr(fname, encoded_img.tobytes())
     zip_buf.seek(0)
 
     # Return zip as file download

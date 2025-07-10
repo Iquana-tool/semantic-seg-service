@@ -72,6 +72,7 @@ def load_model_from_id(model_id: int, device: str = 'cpu', eval_mode=True) -> to
         logger.warning(f"Multiple weight files found for model ID {model_id}. "
                        f"Using the first one: {weight_files[0]}")
     weight_file = os.path.join(MODEL_PATH, weight_files[0])
+    logger.info(f"Loading {weight_file} model with ID: {model_id}")
     return load_model_from_checkpoint_path(weight_file, device=device, eval_mode=eval_mode)
 
 
