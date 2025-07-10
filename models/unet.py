@@ -57,6 +57,6 @@ class UNet(nn.Module):
             x = self.ups[idx+1](x)
         return self.final_conv(x)
 
-def get_unet(num_classes=2, in_channels=3):
+def get_unet(num_classes=2, in_channels=3, **kwargs):
     """Easy function for model registry"""
     return UNet(in_channels=in_channels, num_classes=num_classes)
