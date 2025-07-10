@@ -28,7 +28,9 @@ async def upload_file(dataset_id: int = Form(...),
     contents = await file.read()
 
     # Convert to NumPy using OpenCV from memory
-    img_arr = cv.imdecode(np.frombuffer(contents, np.uint8), cv.IMREAD_UNCHANGED)
+    # Read masks as grayscale and images as normal
+    flag = cv.IMREAD_UNCHANGED if is_image else cv.IMREAD_GRAYSCALE
+    img_arr = cv.imdecode(np.frombuffer(contents, np.uint8), flag)
     if img_arr is None:
         return {"success": False, "message": "Could not decode image file."}
 
