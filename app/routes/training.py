@@ -1,4 +1,5 @@
 import os
+import shutil
 import uuid
 import json
 from fastapi import APIRouter, BackgroundTasks
@@ -42,6 +43,10 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     logger.info(f"Dataset path: {dataset_path}")
     log_dir = os.path.join(LOG_PATH, job_id)
     model_save_path = os.path.join(MODEL_PATH, f"{req.model_identifier}_{job_id}.pt")
+    if os.path.exists(log_dir) and req.restart:
+        # Restarting training removes the entire log dir
+        logger.warning(f"Log directory already exists: {log_dir}. Overwriting logs.")
+        shutil.rmtree(log_dir)
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(MODEL_PATH, exist_ok=True)
     os.makedirs(JOBS_PATH, exist_ok=True)
@@ -55,6 +60,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 dataset_path,
                 batch_size=req.batch_size,
                 augment=req.augment,
+                normalize=False,
                 image_size=req.image_size,
                 split=True,
                 val_ratio=0.1,
@@ -62,7 +68,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 min_samples_for_split=12,
                 seed=42,
             )
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
             criterion = torch.nn.CrossEntropyLoss()
             writer = SummaryWriter(log_dir=log_dir)
 
@@ -82,12 +88,25 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             best_dice, best_epoch = -float("inf"), -1
             early_stopping = EarlyStopping(patience=8)
             history = []
+            val_available = val_loader is not None
             val_loss, val_dice, val_iou = -1., -1., -1.
             for epoch in range(1, req.epochs + 1):
-                train_loss, train_dice, train_iou = run_one_epoch(model, train_loader, optimizer, criterion, device,
+                train_loss, train_dice, train_iou = run_one_epoch(model,
+                                                                  train_loader,
+                                                                  optimizer,
+                                                                  criterion,
+                                                                  device,
+                                                                  writer,
+                                                                  epoch=epoch,
                                                                   train=True)
-                if not val_loader is None:
-                    val_loss, val_dice, val_iou = run_one_epoch(model, val_loader, optimizer, criterion, device,
+                if val_available:
+                    val_loss, val_dice, val_iou = run_one_epoch(model,
+                                                                val_loader,
+                                                                optimizer,
+                                                                criterion,
+                                                                device,
+                                                                writer,
+                                                                epoch=epoch,
                                                                 train=False)
 
                 logger.debug(f"Epoch {epoch} / {req.epochs}. "
@@ -105,7 +124,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                     train_dice=train_dice, val_dice=val_dice,
                     train_iou=train_iou, val_iou=val_iou
                 ))
-                metric_to_measure = val_dice if val_dice is not None else train_dice
+                metric_to_measure = val_dice if val_available else train_dice
 
                 if metric_to_measure > best_dice:
                     logger.info(f"Saving best model to {model_save_path}.")
@@ -129,7 +148,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                             "dataset_id": req.dataset_id,
                             "best_val_dice": best_dice,
                         }, f, indent=2)
-                if req.early_stopping and early_stopping.step(val_dice):
+                if req.early_stopping and early_stopping.step(metric_to_measure):
                     break
 
             writer.close()
@@ -179,7 +198,7 @@ async def download_model(model_id: str):
     return FileResponse(status['result'], filename=f"{model_id}.pt")
 
 
-def run_one_epoch(model, loader, optimizer, criterion, device, train=True):
+def run_one_epoch(model, loader, optimizer, criterion, device, writer: SummaryWriter, epoch, train=True):
     if loader is None:
         return 0.0, 0.0, 0.0
     running_loss, running_dice, running_iou, nbatches = 0.0, 0.0, 0.0, 0
@@ -187,12 +206,22 @@ def run_one_epoch(model, loader, optimizer, criterion, device, train=True):
         model.train()
     else:
         model.eval()
+    added = False
     for imgs, masks in loader:
         imgs, masks = imgs.to(device), masks.to(device)
         if train:
             optimizer.zero_grad()
         outputs = model(imgs)
         loss = criterion(outputs, masks)
+        if not added:
+            writer.add_images(f"Inputs/{'train' if train else 'val'}", imgs, epoch, dataformats="NCHW")
+            # Assume masks shape = [B, H, W], int (class indices)
+            masks_vis = masks.unsqueeze(1).float() / masks.max().clamp(min=1)  # [B,1,H,W] float in 0-1
+            writer.add_images(f"Targets/{'train' if train else 'val'}", masks_vis, epoch, dataformats="NCHW")
+            pred_classes = torch.argmax(outputs, dim=1)  # [B,H,W]
+            pred_vis = pred_classes.unsqueeze(1).float() / pred_classes.max().clamp(min=1)
+            writer.add_images(f"Outputs/{'train' if train else 'val'}", pred_vis, epoch, dataformats="NCHW")
+            added = True
         if train:
             loss.backward()
             optimizer.step()
@@ -214,3 +243,10 @@ def run_test(model, test_loader, device):
             ntest += 1
     n = max(ntest, 1)
     return test_dice / n, test_iou / n
+
+
+def unnormalize(imgs, mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]):
+    device = imgs.device
+    mean = torch.tensor(mean, dtype=imgs.dtype, device=device).view(1, -1, 1, 1)
+    std = torch.tensor(std, dtype=imgs.dtype, device=device).view(1, -1, 1, 1)
+    return imgs * std + mean
