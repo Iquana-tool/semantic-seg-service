@@ -13,7 +13,7 @@ from training.metrics import dice_coeff, iou_score
 from training.early_stopping import EarlyStopping
 from models import load_model_from_checkpoint_path
 
-router = APIRouter(prefix="/train", tags=["training"])
+router = APIRouter(prefix="/training", tags=["training"])
 logger = getLogger(__name__)
 
 
@@ -36,8 +36,10 @@ def read_job_status(job_id):
 
 @router.post("/start_training")
 async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks):
-    job_id = req.model_id
+    logger.info(f"Received training request: {req}")
+    job_id = str(req.model_id_db)
     dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
+    logger.info(f"Dataset path: {dataset_path}")
     log_dir = os.path.join(LOG_PATH, job_id)
     model_save_path = os.path.join(MODEL_PATH, f"{req.model_identifier}_{job_id}.pt")
     os.makedirs(log_dir, exist_ok=True)
@@ -62,30 +64,34 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             )
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             criterion = torch.nn.CrossEntropyLoss()
-            optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
             writer = SummaryWriter(log_dir=log_dir)
 
             start_epoch = 1
             if not req.restart and os.path.exists(model_save_path):
                 model, checkpoint = load_model_from_checkpoint_path(model_save_path, device=device, eval_mode=False)
+                optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
                 start_epoch = checkpoint.get("epoch", 1)
                 logger.info(f"Resuming training of {req.model_identifier} from epoch {start_epoch}.")
-            elif not req.restart and not os.path.exists(model_save_path):
+            else:
                 logger.warning(f"Checkpoint {model_save_path} does not exist. Starting training from scratch.")
-                model = MODEL_REGISTRY[req.model_identifier](num_classes=req.num_classes, in_channels=req.in_channels)
+                model = (MODEL_REGISTRY[req.model_identifier])["getter"](num_classes=req.num_classes, in_channels=req.in_channels)
+                optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
                 model = model.to(device)
 
-            best_dice, best_epoch = 0.0, 0
+            best_dice, best_epoch = -float("inf"), -1
             early_stopping = EarlyStopping(patience=8)
             history = []
-
+            val_loss, val_dice, val_iou = -1., -1., -1.
             for epoch in range(1, req.epochs + 1):
                 train_loss, train_dice, train_iou = run_one_epoch(model, train_loader, optimizer, criterion, device,
                                                                   train=True)
-                val_loss, val_dice, val_iou = run_one_epoch(model, val_loader, optimizer, criterion, device,
-                                                            train=False)
+                if not val_loader is None:
+                    val_loss, val_dice, val_iou = run_one_epoch(model, val_loader, optimizer, criterion, device,
+                                                                train=False)
 
+                logger.debug(f"Epoch {epoch} / {req.epochs}. "
+                             f"Validation dice: {val_dice:.2%} \t Training dice: {train_dice:.2%}")
                 writer.add_scalar("Loss/train", train_loss, epoch)
                 writer.add_scalar("Loss/val", val_loss, epoch)
                 writer.add_scalar("Dice/train", train_dice, epoch)
@@ -99,9 +105,11 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                     train_dice=train_dice, val_dice=val_dice,
                     train_iou=train_iou, val_iou=val_iou
                 ))
+                metric_to_measure = val_dice if val_dice is not None else train_dice
 
-                if val_dice > best_dice:
-                    best_dice = val_dice
+                if metric_to_measure > best_dice:
+                    logger.info(f"Saving best model to {model_save_path}.")
+                    best_dice = metric_to_measure
                     best_epoch = epoch
                     checkpoint_obj = {
                         "model_state_dict": model.state_dict(),
@@ -110,7 +118,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                     }
                     torch.save(checkpoint_obj, model_save_path)
                     # Save meta info
-                    with open(model_save_path + ".json", "w") as f:
+                    with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
                         json.dump({
                             "model_identifier": req.model_identifier,
                             "num_classes": req.num_classes,
@@ -140,10 +148,12 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 "test_dice": test_dice,
                 "test_iou": test_iou,
             }
+            logger.info(f"Job {job_id} completed.")
             save_job_status(job_id, "completed", result=model_save_path, extra=status_extra)
 
         except Exception as e:
             save_job_status(job_id, "failed", result=str(e))
+            raise e
 
     background_tasks.add_task(background_train_job)
     return {"success": True,

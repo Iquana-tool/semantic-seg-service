@@ -38,7 +38,6 @@ async def upload_file(dataset_id: int = Form(...),
     tensor = torch.from_numpy(img_arr)
     if is_image and tensor.ndim == 3:
         tensor = tensor.permute(2, 0, 1)  # HWC → CHW
-
     # Save as .pt
     tensor = tensor.to(dtype=torch.long)
     torch.save(tensor, tensor_path)

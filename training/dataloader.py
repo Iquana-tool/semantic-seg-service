@@ -58,7 +58,7 @@ class SegmentationTensorDataset(Dataset):
         mask_path = os.path.join(self.mask_dir, image_name)
 
         image = torch.load(image_path).float()
-        mask = torch.load(mask_path).long()
+        mask = torch.load(mask_path)
 
         # Ensure image is CHW
         if image.ndim == 2:
@@ -92,7 +92,7 @@ class SegmentationTensorDataset(Dataset):
         # Random rotation (±15 degrees)
         angle = random.uniform(-15, 15)
         image = TF.rotate(image, angle, interpolation=TF.InterpolationMode.BILINEAR)
-        mask = TF.rotate(mask, angle, interpolation=TF.InterpolationMode.NEAREST)
+        mask = TF.rotate(mask.unsqueeze(1), angle, interpolation=TF.InterpolationMode.NEAREST).squeeze(1)
 
         # Apply color jitter only to images
         image = self.color_jitter(image)

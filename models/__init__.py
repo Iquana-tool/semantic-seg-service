@@ -33,7 +33,7 @@ def load_model_from_checkpoint_path(checkpoint_path: str, device: str = 'cpu', e
         tuple: (model, checkpoint) where model is the loaded model and checkpoint is the state dictionary for further
         use.
     """
-    config_path = checkpoint_path.split(".")[0] + ".json"
+    config_path = checkpoint_path.rsplit(".", 1)[0] + ".json"
     if not os.path.exists(checkpoint_path) or not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(f"Model weights file {checkpoint_path} or config file {config_path} does not exist.")
     # Get the registration key and model ID from the file name
@@ -44,6 +44,7 @@ def load_model_from_checkpoint_path(checkpoint_path: str, device: str = 'cpu', e
     with open(config_path, "r") as f:
         config = json.load(f)
     model = model_fn(**config)
+    model.to(device)
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
     if eval_mode:

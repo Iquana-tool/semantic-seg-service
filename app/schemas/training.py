@@ -6,7 +6,7 @@ from paths import DATA_PATH
 
 
 class TrainingRequest(BaseModel):
-    dataset_id: int
+    dataset_id: int = Field(default=1, description="Dataset ID")
     model_identifier: str = Field(default="unet", description="Identifier for the model to be trained. "
                                                       "Should be got by GET /models/get_trainable_models")
     model_id_db: int = Field(description="ID of the model in the database. Must be provided.")
@@ -43,3 +43,4 @@ class TrainingRequest(BaseModel):
         if str(value) not in os.listdir(DATA_PATH):
             raise ValueError(f"Dataset with ID {value} does not exist in the data path {DATA_PATH}."
                              f"Please make sure to upload the dataset first.")
+        return value
