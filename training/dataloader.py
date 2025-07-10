@@ -17,7 +17,7 @@ class SegmentationTensorDataset(Dataset):
         self,
         dataset_root: str,
         augment: bool = False,
-        normalize: bool = True,
+        normalize: bool = False,
         image_size: Tuple[int, int] = (256, 256),
     ):
         """
@@ -92,14 +92,16 @@ class SegmentationTensorDataset(Dataset):
         # Random rotation (±15 degrees)
         angle = random.uniform(-15, 15)
         image = TF.rotate(image, angle, interpolation=TF.InterpolationMode.BILINEAR)
-        mask = TF.rotate(mask.unsqueeze(1), angle, interpolation=TF.InterpolationMode.NEAREST).squeeze(1)
+        mask = TF.rotate(mask.unsqueeze(0), angle, interpolation=TF.InterpolationMode.NEAREST).squeeze(0)
 
         # Apply color jitter only to images
         image = self.color_jitter(image)
 
         # Random crop
-        crop_size = min(image.shape[1], image.shape[2], 224)
-        i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(crop_size, crop_size))
+        zoom_level = random.randint(5, 10) / 10
+        i, j, h, w = transforms.RandomCrop.get_params(image,
+                                                      output_size=(int(zoom_level * image.shape[1]),
+                                                                   int(zoom_level * image.shape[2])))
         image = TF.crop(image, i, j, h, w)
         mask = TF.crop(mask, i, j, h, w)
 
