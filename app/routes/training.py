@@ -1,6 +1,5 @@
 import os
 import shutil
-import uuid
 import json
 from fastapi import APIRouter, BackgroundTasks
 from app.schemas.training import TrainingRequest
