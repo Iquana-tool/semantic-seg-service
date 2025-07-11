@@ -15,11 +15,13 @@ async def get_trainable_base_models():
     """Retrieve all available segmentation models."""
     logger.debug("Fetching available segmentation models.")
     # Get the models from the registry, excluding the 'getter' key
-    models = {key:
-        {k: v for k, v in value.items() if k != "getter"}
-              for key, value in MODEL_REGISTRY.items()
-              }
-    return {"success": True, "models": models}
+    result = []
+    for key, entry in MODEL_REGISTRY.items():
+        entry_copy = entry.copy()
+        entry_copy.pop("getter")  # This does not need to be returned
+        entry_copy["model_identifier"] = key
+        result.append(entry_copy)
+    return {"success": True, "models": result}
 
 
 @router.get("/get_trained_models_of_dataset/{dataset_id}")
@@ -35,8 +37,9 @@ async def get_trained_models_of_dataset(dataset_id: int):
         meta_entry = json.load(open(os.path.join(MODEL_PATH, weight.rsplit(".", 1)[0] + ".json")))
         if not int(meta_entry["dataset_id"]) == dataset_id:
             continue
-        registry_entry = MODEL_REGISTRY.get(identifier)
-        del registry_entry["getter"]
+        registry_entry = MODEL_REGISTRY.get(identifier).copy()
+        registry_entry.pop("getter")
+        registry_entry["model_identifier"] = model_id
         model_entry = {**registry_entry, **meta_entry}
         trained_models_result.append(model_entry)
     return {"success": True,
