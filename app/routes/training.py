@@ -206,7 +206,8 @@ async def get_job_status(model_id: str):
 @router.get("/cancel_job/{job_id}")
 async def cancel_job(job_id: int):
     logger.warning("THIS IS A WORKAROUND FOR CANCELLING JOBS!\nIt works by deleting the log directory which leads to an"
-                   " error with tensorboard, which in turn stops the background task.")
+                   " error with tensorboard, which in turn stops the background task. Using this might lead to "
+                   "unexpected behaviour.")
     log_dir = os.path.join(LOG_PATH, job_id)
     shutil.rmtree(log_dir, ignore_errors=True)
     return {"success": True,
