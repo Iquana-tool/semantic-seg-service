@@ -2,17 +2,20 @@ import os
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Tuple
 from models import MODEL_REGISTRY
-from paths import DATA_PATH
+from paths import DATA_PATH, MODEL_PATH
+from models import parse_weight_file_name
+from typing import Union
 
 
 class TrainingRequest(BaseModel):
     dataset_id: int = Field(default=1, description="Dataset ID")
-    model_identifier: str = Field(default="unet", description="Identifier for the model to be trained. "
-                                                      "Should be got by GET /models/get_trainable_models")
-    model_id_db: int = Field(description="ID of the model in the database. Must be provided.")
-    restart: bool = Field(default=True, description="Whether to restart training from scratch. If set to True, "
-                                                     "the model will be trained from scratch, else it will continue "
-                                                     "training from the last checkpoint.")
+    model_identifier: Union[int, str] = Field(default="unet", description="Identifier for the model to be trained. "
+                                                      "Can either be a registry key, or an int representing a trained"
+                                                                          " model")
+    overwrite: bool = Field(default=True, description="Whether to overwrite the model checkpoint or create a "
+                                                      "new identifier.")
+
+    # Parameters
     epochs: int = Field(default=50, description="Number of epochs to train the model.")
     batch_size: int = Field(default=64, description="Batch size to train the model.")
     lr: float = Field(default=0.0001, description="Learning rate to train the model.")
@@ -33,9 +36,11 @@ class TrainingRequest(BaseModel):
     def validate_model_identifier(cls, value):
         if not value:
             raise ValueError("Model identifier cannot be empty.")
-        if value not in MODEL_REGISTRY:
+        available_trained_models = [parse_weight_file_name(file_name)[1] for file_name in os.listdir(MODEL_PATH)]
+        available_models = list(MODEL_REGISTRY.keys()) + available_trained_models
+        if value not in available_models:
             raise ValueError(f"Model identifier '{value}' is not recognized. "
-                             f"Available models: {list(MODEL_REGISTRY.keys())}.")
+                             f"Available models: {available_models}.")
         return value
 
     @field_validator('dataset_id')

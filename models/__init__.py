@@ -113,4 +113,12 @@ def parse_weight_file_name(file_name: str):
     """
     base_name = os.path.basename(file_name).split(".")[0]
     reg_key, model_id = base_name.split("_")
-    return reg_key, model_id
+    return reg_key, int(model_id)
+
+
+def get_registry_key_from_id(model_id: int):
+    # Get all files with the model id in them. This should be exactly one.
+    result = [parse_weight_file_name(filename) for filename in os.listdir(MODEL_PATH) if filename.endswith(".json") and
+             model_id == parse_weight_file_name(filename)[1]]
+    return result[0]
+

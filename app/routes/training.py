@@ -11,7 +11,8 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from training.metrics import dice_coeff, iou_score
 from training.early_stopping import EarlyStopping
-from models import load_model_from_checkpoint_path
+from models import load_model_from_checkpoint_path, get_registry_key_from_id
+from app.util.job_id_management import get_new_job_id
 
 router = APIRouter(prefix="/training", tags=["training"])
 logger = getLogger(__name__)
@@ -37,12 +38,24 @@ def read_job_status(job_id):
 @router.post("/start_training")
 async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks):
     logger.info(f"Received training request: {req}")
-    job_id = str(req.model_id_db)
+    # Restart = Starting training with a base model. Otherwise continue training specified model.
+    restart = not type(req.model_identifier) is int
+    if type(req.model_identifier) is int and req.overwrite:
+        # We overwrite the old job id, instead of giving a new one.
+        job_id = str(req.model_identifier)
+    else:
+        # Get a new job id, because we either train from a base model (when type is not int) or we dont want to
+        # overwrite.
+        job_id = get_new_job_id()
+    if type(req.model_identifier) is str:
+        registry_key = req.model_identifier
+    else:
+        registry_key = get_registry_key_from_id(req.model_identifier)
     dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
     logger.info(f"Dataset path: {dataset_path}")
     log_dir = os.path.join(LOG_PATH, job_id)
-    model_save_path = os.path.join(MODEL_PATH, f"{req.model_identifier}_{job_id}.pt")
-    if os.path.exists(log_dir) and req.restart:
+    model_save_path = os.path.join(MODEL_PATH, f"{registry_key}_{job_id}.pt")
+    if os.path.exists(log_dir) and restart:
         # Restarting training removes the entire log dir
         logger.warning(f"Log directory already exists: {log_dir}. Overwriting logs.")
         shutil.rmtree(log_dir)
@@ -72,7 +85,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             writer = SummaryWriter(log_dir=log_dir)
 
             start_epoch = 1
-            if not req.restart and os.path.exists(model_save_path):
+            if not restart and os.path.exists(model_save_path):
                 model, checkpoint = load_model_from_checkpoint_path(model_save_path, device=device, eval_mode=False)
                 optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -90,6 +103,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             val_available = val_loader is not None
             test_available = test_loader is not None
             val_loss, val_dice, val_iou = -1., -1., -1.
+            save_job_status(job_id, "in progress")
             for epoch in range(1, req.epochs + 1):
                 train_loss, train_dice, train_iou = run_one_epoch(model,
                                                                   train_loader,
@@ -177,7 +191,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     background_tasks.add_task(background_train_job)
     return {"success": True,
             "job_id": job_id,
-            "status": "in progress",
+            "status": "In progress",
             "message": "Training started in the background."}
 
 
