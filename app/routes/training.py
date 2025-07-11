@@ -203,6 +203,17 @@ async def get_job_status(model_id: str):
     return status
 
 
+@router.get("/cancel_job/{job_id}")
+async def cancel_job(job_id: int):
+    logger.warning("THIS IS A WORKAROUND FOR CANCELLING JOBS!\nIt works by deleting the log directory which leads to an"
+                   " error with tensorboard, which in turn stops the background task.")
+    log_dir = os.path.join(LOG_PATH, job_id)
+    shutil.rmtree(log_dir, ignore_errors=True)
+    return {"success": True,
+            "message": f"Training of model {job_id} should be cancelled. This might take a while. "
+                       f"Please check again in a few seconds."}
+
+
 @router.get("/download_model/{model_id}")
 async def download_model(model_id: str):
     status = read_job_status(model_id)
