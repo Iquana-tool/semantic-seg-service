@@ -88,6 +88,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             early_stopping = EarlyStopping(patience=8)
             history = []
             val_available = val_loader is not None
+            test_available = test_loader is not None
             val_loss, val_dice, val_iou = -1., -1., -1.
             for epoch in range(1, req.epochs + 1):
                 train_loss, train_dice, train_iou = run_one_epoch(model,
@@ -135,6 +136,11 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                         "epoch": epoch,
                     }
                     torch.save(checkpoint_obj, model_save_path)
+
+                    # Evaluate on test set if available and model improved
+                    test_dice, test_iou = None, None
+                    if test_available:
+                        test_dice, test_iou = run_test(model, test_loader, device)
                     # Save meta info
                     with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
                         json.dump({
@@ -145,19 +151,14 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                             "epoch": epoch,
                             "job_id": job_id,
                             "dataset_id": req.dataset_id,
-                            "best_val_dice": best_dice,
+                            "train_dice": train_dice,
+                            "val_dice": val_dice,
+                            "test_dice": test_dice,
                         }, f, indent=2)
                 if req.early_stopping and early_stopping.step(metric_to_measure):
                     break
 
             writer.close()
-
-            # Evaluate on test set if available
-            test_dice, test_iou = None, None
-            if test_loader is not None:
-                # If using advanced checkpoint, need to load model_state_dict out of dict
-                model = load_model_from_checkpoint_path(model_save_path, device=device, eval_model=True)
-                test_dice, test_iou = run_test(model, test_loader, device)
 
             status_extra = {
                 "history": history,
