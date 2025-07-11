@@ -11,10 +11,12 @@ logger = getLogger(__name__)
 MODEL_REGISTRY = {
     "unet": {
         "getter": get_unet,  # Function to get the UNet model, absolutely required
-        "name": "UNet",
-        "description": "Simple Decoder Encoder Network with Skip Connections. UNet is simple but powerful.",
-        "speed": "Fast",
-        "automatic tuning": False,
+        "Name": "UNet",
+        "Description": "Simple Decoder Encoder Network with Skip Connections. UNet is simple but powerful.",
+        "Training speed": "Fast",
+        "Model size": "Small",
+        "Automatically tuned": False,
+        "Pre-trained": False
     },
     # Placeholders for other models, e.g. "nnunet": get_nnunet
 }
