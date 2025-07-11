@@ -5,6 +5,8 @@ from models import parse_weight_file_name
 
 def get_new_job_id():
     model_ids = sorted([parse_weight_file_name(filename)[1] for filename in os.listdir(MODEL_PATH)])
+    if not model_ids:
+        return 0
     prev_id = model_ids[0]
     if prev_id > 0:
         # The first id is larger than 0 so we can give this id back

@@ -46,7 +46,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     else:
         # Get a new job id, because we either train from a base model (when type is not int) or we dont want to
         # overwrite.
-        job_id = get_new_job_id()
+        job_id = str(get_new_job_id())
     if type(req.model_identifier) is str:
         registry_key = req.model_identifier
     else:
@@ -208,7 +208,7 @@ async def cancel_job(job_id: int):
     logger.warning("THIS IS A WORKAROUND FOR CANCELLING JOBS!\nIt works by deleting the log directory which leads to an"
                    " error with tensorboard, which in turn stops the background task. Using this might lead to "
                    "unexpected behaviour.")
-    log_dir = os.path.join(LOG_PATH, job_id)
+    log_dir = os.path.join(LOG_PATH, str(job_id))
     shutil.rmtree(log_dir, ignore_errors=True)
     return {"success": True,
             "message": f"Training of model {job_id} should be cancelled. This might take a while. "
