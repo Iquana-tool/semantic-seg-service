@@ -103,11 +103,7 @@ async def segment_batch(
     logits = model(batch)  # [N, num_classes, H, W]
     pred = torch.argmax(logits, dim=1)  # [N, H, W]
     masks_np = pred.cpu().numpy()  # shape: (N, H, W)
-    print(np.unique(masks_np))
-    for mask in masks_np:
-        mask_img = mask
-        fig = px.imshow(mask_img)
-        fig.show()
+
     # Prepare ZIP in memory
     zip_buf = BytesIO()
     with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as mask_zip:
