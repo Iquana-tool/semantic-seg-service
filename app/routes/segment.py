@@ -11,7 +11,6 @@ from PIL import Image
 from io import BytesIO
 import zipfile
 import os
-import plotly.express as px
 
 
 router = APIRouter(prefix="/segment", tags=["segment"])
