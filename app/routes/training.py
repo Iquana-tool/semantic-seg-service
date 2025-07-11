@@ -40,7 +40,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     logger.info(f"Received training request: {req}")
     # Restart = Starting training with a base model. Otherwise continue training specified model.
     restart = not type(req.model_identifier) is int
-    if type(req.model_identifier) is int and req.overwrite:
+    if type(req.model_identifier) is int or req.overwrite:
         # We overwrite the old job id, instead of giving a new one.
         job_id = str(req.model_identifier)
     else:
@@ -169,6 +169,14 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                             "val_dice": val_dice,
                             "test_dice": test_dice,
                         }, f, indent=2)
+                if epoch % 5 == 0:
+                    status_extra = {
+                        "epoch": epoch + 1,
+                        "total_epochs": req.epochs,
+                        "train_dice": train_dice,
+                        "val_dice": best_dice,
+                    }
+                    save_job_status(job_id, "in progress", )
                 if req.early_stopping and early_stopping.step(metric_to_measure):
                     break
 
@@ -199,7 +207,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
 async def get_job_status(model_id: str):
     status = read_job_status(model_id)
     if status is None:
-        return {"error": "Job not found"}
+        return {"success": True, "message": "No job", "status": "No job"}
     return status
 
 
