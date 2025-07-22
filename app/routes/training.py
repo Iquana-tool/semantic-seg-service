@@ -162,7 +162,10 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                             "num_classes": req.num_classes,
                             "in_channels": req.in_channels,
                             "image_size": req.image_size,
+                            "num_input_images": len(train_loader.dataset),
+                            "training": "in progress",
                             "epoch": epoch,
+                            "total_epochs": req.epochs,
                             "job_id": job_id,
                             "dataset_id": req.dataset_id,
                             "train_dice": train_dice,
@@ -189,10 +192,44 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 "test_dice": test_dice,
                 "test_iou": test_iou,
             }
+            # Save meta info
+            with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
+                json.dump({
+                    "model_identifier": req.model_identifier,
+                    "num_classes": req.num_classes,
+                    "in_channels": req.in_channels,
+                    "image_size": req.image_size,
+                    "num_input_images": len(train_loader.dataset),
+                    "training": "completed",
+                    "epoch": epoch,
+                    "total_epochs": req.epochs,
+                    "job_id": job_id,
+                    "dataset_id": req.dataset_id,
+                    "train_dice": train_dice,
+                    "val_dice": val_dice,
+                    "test_dice": test_dice,
+                }, f, indent=2)
             logger.info(f"Job {job_id} completed.")
             save_job_status(job_id, "completed", result=model_save_path, extra=status_extra)
 
         except Exception as e:
+            # Save meta info
+            with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
+                json.dump({
+                    "model_identifier": req.model_identifier,
+                    "num_classes": req.num_classes,
+                    "in_channels": req.in_channels,
+                    "image_size": req.image_size,
+                    "num_input_images": len(train_loader.dataset),
+                    "training": "failed",
+                    "epoch": epoch,
+                    "total_epochs": req.epochs,
+                    "job_id": job_id,
+                    "dataset_id": req.dataset_id,
+                    "train_dice": train_dice,
+                    "val_dice": val_dice,
+                    "test_dice": test_dice,
+                }, f, indent=2)
             save_job_status(job_id, "failed", result=str(e))
             raise e
 

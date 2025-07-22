@@ -13,7 +13,7 @@ MODEL_REGISTRY = {
         "getter": get_unet,  # Function to get the UNet model, absolutely required
         "Name": "UNet",
         "Description": "Simple Decoder Encoder Network with Skip Connections. UNet is simple but powerful.",
-        "Training speed": "Fast",
+        "Training speed": "Medium",
         "Model size": "Small",
         "Automatically tuned": False,
         "Pre-trained": False
