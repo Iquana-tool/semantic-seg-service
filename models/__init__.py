@@ -122,3 +122,18 @@ def get_registry_key_from_id(model_id: int):
              model_id == parse_weight_file_name(filename)[1]]
     return result[0]
 
+
+def delete_model(model_id: int):
+    """
+    Delete a model by its ID.
+
+    Args:
+        model_id (int): The ID of the model to delete.
+    """
+    weight_files = [f for f in os.listdir(MODEL_PATH) if f.endswith(".pt") and f.split("_")[-1].split(".")[0] == str(model_id)]
+    meta_files = [f for f in os.listdir(MODEL_PATH) if f.endswith(".json") and f.split("_")[-1].split(".")[0] == str(model_id)]
+
+    for file in weight_files + meta_files:
+        os.remove(os.path.join(MODEL_PATH, file))
+        logger.info(f"Deleted model file: {file}")
+

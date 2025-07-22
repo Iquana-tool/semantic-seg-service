@@ -11,7 +11,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from training.metrics import dice_coeff, iou_score
 from training.early_stopping import EarlyStopping
-from models import load_model_from_checkpoint_path, get_registry_key_from_id
+from models import load_model_from_checkpoint_path, get_registry_key_from_id, delete_model
 from app.util.job_id_management import get_new_job_id
 
 router = APIRouter(prefix="/training", tags=["training"])
@@ -176,7 +176,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                         "train_dice": train_dice,
                         "val_dice": best_dice,
                     }
-                    save_job_status(job_id, "in progress", )
+                    save_job_status(job_id, "in progress", extra=status_extra)
                 if req.early_stopping and early_stopping.step(metric_to_measure):
                     break
 
@@ -218,6 +218,7 @@ async def cancel_job(job_id: int):
                    "unexpected behaviour.")
     log_dir = os.path.join(LOG_PATH, str(job_id))
     shutil.rmtree(log_dir, ignore_errors=True)
+    delete_model(job_id)
     return {"success": True,
             "message": f"Training of model {job_id} should be cancelled. This might take a while. "
                        f"Please check again in a few seconds."}
