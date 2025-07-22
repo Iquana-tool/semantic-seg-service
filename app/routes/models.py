@@ -4,7 +4,7 @@ from collections import defaultdict
 from logging import getLogger
 from fastapi import APIRouter, UploadFile, File
 from models import MODEL_REGISTRY
-from paths import MODEL_PATH
+from paths import MODEL_PATH, JOBS_PATH
 
 router = APIRouter(prefix="/models", tags=["models"])
 logger = getLogger(__name__)
@@ -45,3 +45,35 @@ async def get_trained_models_of_dataset(dataset_id: int):
     return {"success": True,
             "message": f"Found {len(trained_models)} trained models.",
             "models": trained_models_result}
+
+
+@router.get("/get_training_models_of_dataset/{dataset_id}")
+async def get_training_models():
+    """Retrieve all models that are currently being trained."""
+    logger.debug("Fetching currently training segmentation models.")
+    # Get the training models from the weights directory
+    training_models = [file for file in os.listdir(JOBS_PATH) if file.endswith(".json")]
+    training_models_result = []
+
+    for job_file in training_models:
+        job_info = json.load(open(os.path.join(JOBS_PATH, job_file)))
+        if job_info["status"] == "in progress":
+            training_models_result.append(job_file.split(".")[0])  # Get the job ID without the .json extension
+    return {"success": True,
+            "message": f"Found {len(training_models)} training models.",
+            "models": training_models_result}
+
+
+@router.get("/get_model_metadata/{model_id}")
+async def get_model_metadata(model_id: int):
+    """Retrieve metadata for a specific model."""
+    logger.debug(f"Fetching metadata for model ID {model_id}.")
+    meta_files = [f for f in os.listdir(MODEL_PATH) if f.endswith(".json") and f.split("_")[-1].split(".")[0] == str(model_id)]
+    if not meta_files:
+        return {"success": False, "message": f"No trained model found with ID {model_id}."}
+    if len(meta_files) > 1:
+        logger.warning(f"Multiple metadata jsons found for model ID {model_id}. Using the first one: {meta_files[0]}")
+    meta_file = os.path.join(MODEL_PATH, meta_files[0])
+    with open(meta_file, "r") as f:
+        metadata = json.load(f)
+    return {"success": True, "metadata": metadata}
