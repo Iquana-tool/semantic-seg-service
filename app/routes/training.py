@@ -80,7 +80,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 min_samples_for_split=12,
                 seed=42,
             )
-            device = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             criterion = torch.nn.CrossEntropyLoss()
             writer = SummaryWriter(log_dir=log_dir)
 
