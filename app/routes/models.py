@@ -2,6 +2,8 @@ import json
 import os
 from collections import defaultdict
 from logging import getLogger
+from typing import Union
+
 from fastapi import APIRouter, UploadFile, File
 from models import MODEL_REGISTRY
 from paths import MODEL_PATH, JOBS_PATH
@@ -68,8 +70,14 @@ async def get_training_models():
 
 
 @router.get("/get_model_metadata/{model_id}")
-async def get_model_metadata(model_id: int):
+async def get_model_metadata(model_id: Union[str, int]):
     """Retrieve metadata for a specific model."""
+    try:
+        model_id = int(model_id)
+    except ValueError:
+        pass
+    if type(model_id) is str:
+        return {"success": True, "metadata": MODEL_REGISTRY[model_id].copy()}
     logger.debug(f"Fetching metadata for model ID {model_id}.")
     meta_files = [f for f in os.listdir(MODEL_PATH) if f.endswith(".json") and f.split("_")[-1].split(".")[0] == str(model_id)]
     if not meta_files:

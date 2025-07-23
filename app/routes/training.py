@@ -116,6 +116,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             criterion = torch.nn.CrossEntropyLoss()
             writer = SummaryWriter(log_dir=log_dir)
+            logger.info(f"Starting training of {req.model_identifier} on device {device}. ")
 
             start_epoch = 1
             if not restart and os.path.exists(model_save_path):
