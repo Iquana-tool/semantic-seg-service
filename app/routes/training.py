@@ -63,9 +63,10 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     os.makedirs(MODEL_PATH, exist_ok=True)
     os.makedirs(JOBS_PATH, exist_ok=True)
 
-    # Save meta info
-    with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
-        json.dump({
+    # To keep track of everything
+    model_performance_dict: dict = {k: v for k, v in MODEL_REGISTRY[registry_key].copy().items() if k != "getter"}
+    model_performance_dict.update(
+        {
             "model_identifier": req.model_identifier,
             "num_classes": req.num_classes,
             "in_channels": req.in_channels,
@@ -73,13 +74,27 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             "num_input_images": None,
             "training": "starting",
             "epoch": None,
+            "best_epoch": None,
             "total_epochs": req.epochs,
             "job_id": job_id,
             "dataset_id": req.dataset_id,
-            "train_dice": None,
-            "val_dice": None,
+            "train_dice": [],
+            "train_iou": [],
+            "train_loss": [],
+            "val_dice": [],
+            "val_iou": [],
+            "val_loss": [],
             "test_dice": None,
-        }, f, indent=2)
+            "test_iou": None,
+            "best_train_dice": None,
+            "best_val_dice": None,
+            "best_test_dice": None,
+        }
+    )
+
+    # Save meta info at the start
+    with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
+        json.dump(model_performance_dict, f, indent=2)
 
     save_job_status(job_id, "queued")
 
@@ -122,6 +137,8 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             test_available = test_loader is not None
             val_loss, val_dice, val_iou = -1., -1., -1.
             save_job_status(job_id, "in progress")
+            model_performance_dict["training"] = "in progress"
+            model_performance_dict["num_input_images"] = len(train_loader.dataset)
             for epoch in range(1, req.epochs + 1):
                 train_loss, train_dice, train_iou = run_one_epoch(model,
                                                                   train_loader,
@@ -157,7 +174,17 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                     train_iou=train_iou, val_iou=val_iou
                 ))
                 metric_to_measure = val_dice if val_available else train_dice
-
+                model_performance_dict.update(
+                    {
+                        "epoch": epoch,
+                        "train_dice": model_performance_dict["train_dice"] + [train_dice],
+                        "train_iou": model_performance_dict["train_iou"] + [train_iou],
+                        "train_loss": model_performance_dict["train_loss"] + [train_loss],
+                        "val_dice": model_performance_dict["val_dice"] + [val_dice] if val_available else [],
+                        "val_iou": model_performance_dict["val_iou"] + [val_iou] if val_available else [],
+                        "val_loss": model_performance_dict["val_loss"] + [val_loss] if val_available else [],
+                    }
+                )
                 if metric_to_measure > best_dice:
                     logger.info(f"Saving best model to {model_save_path}.")
                     best_dice = metric_to_measure
@@ -167,29 +194,28 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                         "optimizer_state_dict": optimizer.state_dict(),
                         "epoch": epoch,
                     }
+                    model_performance_dict.update(
+                        {
+                            "best_epoch": best_epoch,
+                            "best_val_dice": best_dice if val_available else None,
+                            "best_train_dice": train_dice,
+                        }
+                    )
                     torch.save(checkpoint_obj, model_save_path)
-
                     # Evaluate on test set if available and model improved
                     test_dice, test_iou = None, None
                     if test_available:
                         test_dice, test_iou = run_test(model, test_loader, device)
-                    # Save meta info
-                    with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
-                        json.dump({
-                            "model_identifier": req.model_identifier,
-                            "num_classes": req.num_classes,
-                            "in_channels": req.in_channels,
-                            "image_size": req.image_size,
-                            "num_input_images": len(train_loader.dataset),
-                            "training": "in progress",
-                            "epoch": epoch,
-                            "total_epochs": req.epochs,
-                            "job_id": job_id,
-                            "dataset_id": req.dataset_id,
-                            "train_dice": train_dice,
-                            "val_dice": val_dice,
-                            "test_dice": test_dice,
-                        }, f, indent=2)
+                        model_performance_dict.update(
+                            {
+                                "test_dice": test_dice,
+                                "best_test_dice": test_dice,
+                                "test_iou": test_iou,
+                            }
+                        )
+                # Save meta info
+                with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
+                    json.dump(model_performance_dict, f, indent=2)
                 if epoch % 5 == 0:
                     status_extra = {
                         "epoch": epoch + 1,
@@ -210,44 +236,18 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 "test_dice": test_dice,
                 "test_iou": test_iou,
             }
+            model_performance_dict["training"] = "completed"
             # Save meta info
             with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
-                json.dump({
-                    "model_identifier": req.model_identifier,
-                    "num_classes": req.num_classes,
-                    "in_channels": req.in_channels,
-                    "image_size": req.image_size,
-                    "num_input_images": len(train_loader.dataset),
-                    "training": "completed",
-                    "epoch": epoch,
-                    "total_epochs": req.epochs,
-                    "job_id": job_id,
-                    "dataset_id": req.dataset_id,
-                    "train_dice": train_dice,
-                    "val_dice": val_dice,
-                    "test_dice": test_dice,
-                }, f, indent=2)
+                json.dump(model_performance_dict, f, indent=2)
             logger.info(f"Job {job_id} completed.")
             save_job_status(job_id, "completed", result=model_save_path, extra=status_extra)
 
         except Exception as e:
+            model_performance_dict["training"] = "stopped"
             # Save meta info
             with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
-                json.dump({
-                    "model_identifier": req.model_identifier,
-                    "num_classes": req.num_classes,
-                    "in_channels": req.in_channels,
-                    "image_size": req.image_size,
-                    "num_input_images": len(train_loader.dataset),
-                    "training": "failed",
-                    "epoch": epoch,
-                    "total_epochs": req.epochs,
-                    "job_id": job_id,
-                    "dataset_id": req.dataset_id,
-                    "train_dice": train_dice,
-                    "val_dice": val_dice,
-                    "test_dice": test_dice,
-                }, f, indent=2)
+                json.dump(model_performance_dict, f, indent=2)
             save_job_status(job_id, "failed", result=str(e))
             raise e
 

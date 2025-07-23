@@ -29,12 +29,15 @@ async def get_trained_models_of_dataset(dataset_id: int):
     """Retrieve all trained segmentation models."""
     logger.debug("Fetching trained segmentation models.")
     # Get the trained models from the weights directory
-    trained_models = [file for file in os.listdir(MODEL_PATH) if not file.endswith(".json")]
+    trained_models = [file for file in os.listdir(MODEL_PATH) if file.endswith(".json")]
     trained_models_result = []
-    for weight in trained_models:
-        name = weight.split(".")[0]
+    for meta_json_file in trained_models:
+        name = meta_json_file.split(".")[0]
         identifier, model_id = name.split("_")
-        meta_entry = json.load(open(os.path.join(MODEL_PATH, weight.rsplit(".", 1)[0] + ".json")))
+        meta_entry = json.load(open(os.path.join(MODEL_PATH, meta_json_file)))
+        if meta_entry is None:
+            logger.warning(f"Metadata for model {name} is None, skipping.")
+            continue
         if not int(meta_entry["dataset_id"]) == dataset_id:
             continue
         registry_entry = MODEL_REGISTRY.get(identifier).copy()
