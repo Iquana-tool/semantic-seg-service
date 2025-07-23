@@ -63,6 +63,24 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     os.makedirs(MODEL_PATH, exist_ok=True)
     os.makedirs(JOBS_PATH, exist_ok=True)
 
+    # Save meta info
+    with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
+        json.dump({
+            "model_identifier": req.model_identifier,
+            "num_classes": req.num_classes,
+            "in_channels": req.in_channels,
+            "image_size": req.image_size,
+            "num_input_images": None,
+            "training": "starting",
+            "epoch": None,
+            "total_epochs": req.epochs,
+            "job_id": job_id,
+            "dataset_id": req.dataset_id,
+            "train_dice": None,
+            "val_dice": None,
+            "test_dice": None,
+        }, f, indent=2)
+
     save_job_status(job_id, "queued")
 
     def background_train_job():
@@ -255,7 +273,7 @@ async def cancel_job(job_id: int):
                    "unexpected behaviour.")
     log_dir = os.path.join(LOG_PATH, str(job_id))
     shutil.rmtree(log_dir, ignore_errors=True)
-    delete_model(job_id)
+    #delete_model(job_id)
     return {"success": True,
             "message": f"Training of model {job_id} should be cancelled. This might take a while. "
                        f"Please check again in a few seconds."}
