@@ -40,7 +40,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     logger.info(f"Received training request: {req}")
     # Restart = Starting training with a base model. Otherwise continue training specified model.
     restart = not type(req.model_identifier) is int
-    if type(req.model_identifier) is int or req.overwrite:
+    if type(req.model_identifier) is int:
         # We overwrite the old job id, instead of giving a new one.
         job_id = str(req.model_identifier)
     else:

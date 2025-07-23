@@ -12,8 +12,6 @@ class TrainingRequest(BaseModel):
     model_identifier: Union[int, str] = Field(default="unet", description="Identifier for the model to be trained. "
                                                       "Can either be a registry key, or an int representing a trained"
                                                                           " model")
-    overwrite: bool = Field(default=True, description="Whether to overwrite the model checkpoint or create a "
-                                                      "new identifier.")
 
     # Parameters
     epochs: int = Field(default=50, description="Number of epochs to train the model.")
