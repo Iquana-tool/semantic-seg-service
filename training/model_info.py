@@ -34,6 +34,10 @@ class ModelInfo:
         self.inference_status = JobStatus.IDLE
 
         # Hyperparameters
+        self.batch_size = None
+        self.augment = None
+        self.early_stopping = None
+        self.lr = None
         self.num_classes = None
         self.in_channels = None
         self.image_size = None

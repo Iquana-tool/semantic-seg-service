@@ -98,7 +98,7 @@ def load_metadata_from_id(model_id: int) -> dict:
     meta_file = os.path.join(MODEL_PATH, meta_files[0])
     with open(meta_file, "r") as f:
         metadata = json.load(f)
-    return metadata
+    return metadata, meta_file
 
 
 def parse_weight_file_name(file_name: str):

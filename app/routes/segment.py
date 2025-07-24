@@ -11,6 +11,7 @@ from PIL import Image
 from io import BytesIO
 import zipfile
 import os
+from training.model_info import ModelInfo, JobStatus
 
 
 router = APIRouter(prefix="/segment", tags=["segment"])
@@ -75,8 +76,12 @@ async def segment_batch(
     device = "cpu"
     try:
         model, chkpt = load_model_from_id(model_id, device, eval_mode=True)
-        meta = load_metadata_from_id(model_id)
-        image_size = meta.get("image_size", (256,256))
+
+        meta, info_save_path = load_metadata_from_id(model_id)
+        model_info = ModelInfo().from_json(info_save_path)
+        model_info.set_inference_status(JobStatus.IN_PROGRESS)
+        image_size = model_info.image_size
+        model_info.save(info_save_path)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not load model: {e}")
 

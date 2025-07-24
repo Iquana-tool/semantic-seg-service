@@ -88,7 +88,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
 
         }
     )
-    model_info.set_status(JobStatus.STARTING)
+    model_info.set_training_status(JobStatus.STARTING)
     model_info.save(info_save_path)
 
     save_job_status(job_id, "queued")
