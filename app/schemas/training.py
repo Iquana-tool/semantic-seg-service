@@ -39,6 +39,13 @@ class TrainingRequest(BaseModel):
         if value not in available_models:
             raise ValueError(f"Model identifier '{value}' is not recognized. "
                              f"Available models: {available_models}.")
+        try:
+            # Try to convert the value to an integer
+            # This is important for proper job id handling
+            new_value = int(value)
+            value = new_value
+        except ValueError:
+            pass
         return value
 
     @field_validator('dataset_id')

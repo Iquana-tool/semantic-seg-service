@@ -4,18 +4,18 @@ from models import parse_weight_file_name
 
 
 def get_new_job_id():
-    model_ids = sorted([parse_weight_file_name(filename)[1] for filename in os.listdir(MODEL_PATH)])
+    model_ids = sorted([parse_weight_file_name(filename)[1] for filename in os.listdir(MODEL_PATH) if filename.endswith(".json")])
     if not model_ids:
         return 0
     prev_id = model_ids[0]
     if prev_id > 0:
         # The first id is larger than 0 so we can give this id back
         return 0
-    elif model_ids[-1] == len(model_ids):
+    elif model_ids[-1] + 1 == len(model_ids):
         # The last given id matches the length of the array meaning the entire array is filled continuously
         return model_ids[-1] + 1
     else:
-        for model_id in model_ids:
+        for model_id in model_ids[1:]:
             if prev_id + 1 != model_id:
                 # The next id is larger than the last one plus one, so we can give this back
                 return prev_id + 1

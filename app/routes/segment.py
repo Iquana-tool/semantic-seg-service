@@ -59,7 +59,7 @@ async def segment_b64image(request: B64SegmentationRequest):
 
 @router.post("/segment_batch")
 async def segment_batch(
-    model_id: str = Form(...),
+    model_id: int = Form(...),
     files: list[UploadFile] = File(...)
 ):
     """ Segment a batch of images using the specified model.
@@ -73,16 +73,19 @@ async def segment_batch(
     if len(files) > 10:
         logger.warning(f"Uploading {len(files)} files before segmentation. This can take a while. Consider smaller "
                        f"batches.")
-    device = "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     try:
         model, chkpt = load_model_from_id(model_id, device, eval_mode=True)
 
         meta, info_save_path = load_metadata_from_id(model_id)
-        model_info = ModelInfo().from_json(info_save_path)
+        model_info = ModelInfo()
+        model_info.load(info_save_path)
         model_info.set_inference_status(JobStatus.IN_PROGRESS)
         image_size = model_info.image_size
         model_info.save(info_save_path)
     except Exception as e:
+        logger.error(f"Could not load model: {e}")
+        raise
         raise HTTPException(status_code=400, detail=f"Could not load model: {e}")
 
     # Read and preprocess all images into a batch
@@ -117,7 +120,8 @@ async def segment_batch(
                 raise RuntimeError("cv2.imencode failed!")
             mask_zip.writestr(fname, encoded_img.tobytes())
     zip_buf.seek(0)
-
+    model_info.set_inference_status(JobStatus.FINISHED)
+    model_info.save(info_save_path)
     # Return zip as file download
     return StreamingResponse(
         zip_buf,

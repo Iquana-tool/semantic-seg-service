@@ -1,6 +1,10 @@
 from models import MODEL_REGISTRY
 from enum import Enum
 import json
+from logging import getLogger
+
+
+logger = getLogger(__name__)
 
 
 class JobStatus(Enum):
@@ -24,10 +28,15 @@ class ModelInfo:
         self.model_identifier = registry_key
         self.job_id = job_id
         self.dataset_id = None
-        base_model = MODEL_REGISTRY.get(registry_key)
-        for k, v in base_model.items():
-            if k != "getter":
-                setattr(self, k, v)
+        if registry_key:
+            base_model = MODEL_REGISTRY.get(registry_key)
+            for k, v in base_model.items():
+                if k != "getter":
+                    setattr(self, k, v)
+        else:
+            self.Name = None
+            self.Description = None
+
 
         # Status attributes
         self.training_status = JobStatus.IDLE
@@ -93,7 +102,8 @@ class ModelInfo:
             if hasattr(self, key):
                 setattr(self, key, value)
             else:
-                raise ValueError(f"Invalid key '{key}' for ModelInfo.")
+                logger.warning(f"Key '{key}' not found in ModelInfo. Adding anyways.")
+                setattr(self, key, value)
 
     def to_dict(self):
         """ Convert model information to a JSON object. """
@@ -112,6 +122,10 @@ class ModelInfo:
         with open(load_path, 'r') as f:
             data = json.load(f)
             self.from_json_data(data)
+            if 'training_status' in data:
+                self.set_training_status(data['training_status'])
+            if 'inference_status' in data:
+                self.set_inference_status(data['inference_status'])
 
     def training_step(self, train_loss, train_dice, train_iou, val_loss=None, val_dice=None, val_iou=None):
         """ Update training step information. """

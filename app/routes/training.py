@@ -53,13 +53,12 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     else:
         registry_key = get_registry_key_from_id(req.model_identifier)
     dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
-    logger.info(f"Dataset path: {dataset_path}")
     log_dir = os.path.join(LOG_PATH, job_id)
     model_save_path = os.path.join(MODEL_PATH, f"{registry_key}_{job_id}.pt")
     info_save_path = model_save_path.rsplit(".", 1)[0] + ".json"
     if os.path.exists(log_dir) and restart:
         # Restarting training removes the entire log dir
-        logger.warning(f"Log directory already exists: {log_dir}. Overwriting logs.")
+        logger.warning(f"JOB {job_id}: Log directory already exists: {log_dir}. Overwriting logs.")
         shutil.rmtree(log_dir)
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(MODEL_PATH, exist_ok=True)
@@ -85,7 +84,6 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             "augment": req.augment,
             "lr": req.lr,
             "early_stopping": req.early_stopping,
-
         }
     )
     model_info.set_training_status(JobStatus.STARTING)
@@ -105,23 +103,23 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 split=True,
                 val_ratio=0.1,
                 test_ratio=0.1,
-                min_samples_for_split=12,
+                min_samples_for_split=0,
                 seed=42,
             )
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             criterion = torch.nn.CrossEntropyLoss()
             writer = SummaryWriter(log_dir=log_dir)
-            logger.info(f"Starting training of {req.model_identifier} on device {device}. ")
+            logger.info(f"JOB {job_id}: Starting training of {req.model_identifier} on device {device}. ")
 
             start_epoch = 1
-            if not restart and os.path.exists(model_save_path):
+            if os.path.exists(model_save_path):
                 model, checkpoint = load_model_from_checkpoint_path(model_save_path, device=device, eval_mode=False)
                 optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
                 start_epoch = checkpoint.get("epoch", 1)
-                logger.info(f"Resuming training of {req.model_identifier} from epoch {start_epoch}.")
+                logger.info(f"JOB {job_id}: Resuming training of {req.model_identifier} from epoch {start_epoch}.")
             else:
-                logger.warning(f"Checkpoint {model_save_path} does not exist. Starting training from scratch.")
+                logger.warning(f"JOB {job_id}: Checkpoint {model_save_path} does not exist. Starting training from scratch.")
                 model = (MODEL_REGISTRY[req.model_identifier])["getter"](num_classes=req.num_classes, in_channels=req.in_channels)
                 optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
                 model = model.to(device)
@@ -131,11 +129,12 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             history = []
             val_available = val_loader is not None
             test_available = test_loader is not None
+            logger.info(f"JOB {job_id}: Validation set available: {val_available}, Test set available: {test_available}")
             val_loss, val_dice, val_iou = -1., -1., -1.
             save_job_status(job_id, "in progress")
             model_info.set_training_status(JobStatus.IN_PROGRESS)
             model_info.num_input_images = len(train_loader.dataset)
-            for epoch in range(1, req.epochs + 1):
+            for epoch in range(start_epoch, start_epoch + req.epochs):
                 train_loss, train_dice, train_iou = run_one_epoch(model,
                                                                   train_loader,
                                                                   optimizer,
@@ -154,7 +153,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                                                                 epoch=epoch,
                                                                 train=False)
 
-                logger.debug(f"Epoch {epoch} / {req.epochs}. "
+                logger.debug(f"JOB {job_id}: Epoch {epoch} / {req.epochs}. "
                              f"Validation dice: {val_dice:.2%} \t Training dice: {train_dice:.2%}")
                 writer.add_scalar("Loss/train", train_loss, epoch)
                 writer.add_scalar("Loss/val", val_loss, epoch)
@@ -172,7 +171,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 metric_to_measure = val_dice if val_available else train_dice
                 model_info.training_step(train_loss, train_dice, train_iou, val_loss, val_dice, val_iou)
                 if metric_to_measure > best_dice:
-                    logger.info(f"Saving best model to {model_save_path}.")
+                    logger.info(f"JOB {job_id}: Saving best model to {model_save_path}.")
                     best_dice = metric_to_measure
                     best_epoch = epoch
                     checkpoint_obj = {
@@ -221,10 +220,10 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 "test_dice": test_dice,
                 "test_iou": test_iou,
             }
-            model_info.set_training_status(JobStatus.COMPLETED)
+            model_info.set_training_status(JobStatus.FINISHED)
             # Save meta info
             model_info.save(info_save_path)
-            logger.info(f"Job {job_id} completed.")
+            logger.info(f"JOB {job_id}: Completed.")
             save_job_status(job_id, "completed", result=model_save_path, extra=status_extra)
 
         except Exception as e:
