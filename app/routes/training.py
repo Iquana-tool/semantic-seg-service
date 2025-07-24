@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from training.metrics import dice_coeff, iou_score
 from training.early_stopping import EarlyStopping
 from models import load_model_from_checkpoint_path, get_registry_key_from_id, delete_model
+from training.model_info import ModelInfo, JobStatus
 from app.util.job_id_management import get_new_job_id
 
 router = APIRouter(prefix="/training", tags=["training"])
@@ -55,6 +56,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     logger.info(f"Dataset path: {dataset_path}")
     log_dir = os.path.join(LOG_PATH, job_id)
     model_save_path = os.path.join(MODEL_PATH, f"{registry_key}_{job_id}.pt")
+    info_save_path = model_save_path.rsplit(".", 1)[0] + ".json"
     if os.path.exists(log_dir) and restart:
         # Restarting training removes the entire log dir
         logger.warning(f"Log directory already exists: {log_dir}. Overwriting logs.")
@@ -64,37 +66,30 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     os.makedirs(JOBS_PATH, exist_ok=True)
 
     # To keep track of everything
-    model_performance_dict: dict = {k: v for k, v in MODEL_REGISTRY[registry_key].copy().items() if k != "getter"}
-    model_performance_dict.update(
+    model_info = ModelInfo(registry_key, job_id)
+    if os.path.exists(info_save_path):
+        # Load existing model info if it exists. This means it has been trained before.
+        model_info.load(info_save_path)
+        base_line_epochs = model_info.best_epoch
+    else:
+        base_line_epochs = 0
+    model_info.update(
         {
             "model_identifier": req.model_identifier,
             "num_classes": req.num_classes,
             "in_channels": req.in_channels,
             "image_size": req.image_size,
-            "num_input_images": None,
-            "training": "starting",
-            "epoch": None,
-            "best_epoch": None,
             "total_epochs": req.epochs,
-            "job_id": job_id,
             "dataset_id": req.dataset_id,
-            "train_dice": [],
-            "train_iou": [],
-            "train_loss": [],
-            "val_dice": [],
-            "val_iou": [],
-            "val_loss": [],
-            "test_dice": None,
-            "test_iou": None,
-            "best_train_dice": None,
-            "best_val_dice": None,
-            "best_test_dice": None,
+            "batch_size": req.batch_size,
+            "augment": req.augment,
+            "lr": req.lr,
+            "early_stopping": req.early_stopping,
+
         }
     )
-
-    # Save meta info at the start
-    with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
-        json.dump(model_performance_dict, f, indent=2)
+    model_info.set_status(JobStatus.STARTING)
+    model_info.save(info_save_path)
 
     save_job_status(job_id, "queued")
 
@@ -138,8 +133,8 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             test_available = test_loader is not None
             val_loss, val_dice, val_iou = -1., -1., -1.
             save_job_status(job_id, "in progress")
-            model_performance_dict["training"] = "in progress"
-            model_performance_dict["num_input_images"] = len(train_loader.dataset)
+            model_info.set_training_status(JobStatus.IN_PROGRESS)
+            model_info.num_input_images = len(train_loader.dataset)
             for epoch in range(1, req.epochs + 1):
                 train_loss, train_dice, train_iou = run_one_epoch(model,
                                                                   train_loader,
@@ -175,17 +170,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                     train_iou=train_iou, val_iou=val_iou
                 ))
                 metric_to_measure = val_dice if val_available else train_dice
-                model_performance_dict.update(
-                    {
-                        "epoch": epoch,
-                        "train_dice": model_performance_dict["train_dice"] + [train_dice],
-                        "train_iou": model_performance_dict["train_iou"] + [train_iou],
-                        "train_loss": model_performance_dict["train_loss"] + [train_loss],
-                        "val_dice": model_performance_dict["val_dice"] + [val_dice] if val_available else [],
-                        "val_iou": model_performance_dict["val_iou"] + [val_iou] if val_available else [],
-                        "val_loss": model_performance_dict["val_loss"] + [val_loss] if val_available else [],
-                    }
-                )
+                model_info.training_step(train_loss, train_dice, train_iou, val_loss, val_dice, val_iou)
                 if metric_to_measure > best_dice:
                     logger.info(f"Saving best model to {model_save_path}.")
                     best_dice = metric_to_measure
@@ -195,9 +180,9 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                         "optimizer_state_dict": optimizer.state_dict(),
                         "epoch": epoch,
                     }
-                    model_performance_dict.update(
+                    model_info.update(
                         {
-                            "best_epoch": best_epoch,
+                            "best_epoch": base_line_epochs + best_epoch,
                             "best_val_dice": best_dice if val_available else None,
                             "best_train_dice": train_dice,
                         }
@@ -207,7 +192,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                     test_dice, test_iou = None, None
                     if test_available:
                         test_dice, test_iou = run_test(model, test_loader, device)
-                        model_performance_dict.update(
+                        model_info.update(
                             {
                                 "test_dice": test_dice,
                                 "best_test_dice": test_dice,
@@ -215,8 +200,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                             }
                         )
                 # Save meta info
-                with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
-                    json.dump(model_performance_dict, f, indent=2)
+                model_info.save(info_save_path)
                 if epoch % 5 == 0:
                     status_extra = {
                         "epoch": epoch + 1,
@@ -237,18 +221,16 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 "test_dice": test_dice,
                 "test_iou": test_iou,
             }
-            model_performance_dict["training"] = "completed"
+            model_info.set_training_status(JobStatus.COMPLETED)
             # Save meta info
-            with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
-                json.dump(model_performance_dict, f, indent=2)
+            model_info.save(info_save_path)
             logger.info(f"Job {job_id} completed.")
             save_job_status(job_id, "completed", result=model_save_path, extra=status_extra)
 
         except Exception as e:
-            model_performance_dict["training"] = "stopped"
+            model_info.set_training_status(JobStatus.STOPPED)
             # Save meta info
-            with open(model_save_path.rsplit(".", 1)[0] + ".json", "w") as f:
-                json.dump(model_performance_dict, f, indent=2)
+            model_info.save(info_save_path)
             save_job_status(job_id, "failed", result=str(e))
             raise e
 
