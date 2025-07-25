@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import torchvision.transforms.functional as TF
 import base64
@@ -19,8 +20,9 @@ def mask_to_base64(mask_np: np.ndarray) -> str:
 
 
 def preprocess_image(img_arr, image_size=(256, 256)):
-    img = torch.from_numpy(img_arr)  # float32, CxHxW
-    img = torch.permute(img.unsqueeze(0), (0, 3, 1, 2))
-    img = TF.resize(img, image_size)
-    #img = TF.normalize(img, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    return img
+    """Preprocess the image for model input."""
+    img = torch.from_numpy(img_arr).float()  # float32, CxHxW
+    img = torch.permute(img, (2, 0, 1))
+    img = TF.resize(img, image_size, interpolation=TF.InterpolationMode.BILINEAR)  # Resize to target size
+    #img = TF.normalize(img, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # Normalize to [-1, 1]
+    return img.unsqueeze(0)
