@@ -9,7 +9,7 @@ from typing import Union
 
 class TrainingRequest(BaseModel):
     dataset_id: int = Field(default=1, description="Dataset ID")
-    model_identifier: Union[int, str] = Field(default="unet", description="Identifier for the model to be trained. "
+    model_identifier: str = Field(default="unet", description="Identifier for the model to be trained. "
                                                       "Can either be a registry key, or an int representing a trained"
                                                                           " model")
 
@@ -34,19 +34,14 @@ class TrainingRequest(BaseModel):
     def validate_model_identifier(cls, value):
         if not value:
             raise ValueError("Model identifier cannot be empty.")
-        available_trained_models = [parse_weight_file_name(file_name)[1] for file_name in os.listdir(MODEL_PATH)]
-        available_models = list(MODEL_REGISTRY.keys()) + available_trained_models
-        if value not in available_models:
-            raise ValueError(f"Model identifier '{value}' is not recognized. "
-                             f"Available models: {available_models}.")
+
         try:
             # Try to convert the value to an integer
             # This is important for proper job id handling
             new_value = int(value)
-            value = new_value
+            return new_value
         except ValueError:
-            pass
-        return value
+            return value
 
     @field_validator('dataset_id')
     def validate_dataset_id(cls, value):

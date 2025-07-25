@@ -43,17 +43,19 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     restart = not type(req.model_identifier) is int
     if type(req.model_identifier) is int:
         # We overwrite the old job id, instead of giving a new one.
-        job_id = str(req.model_identifier)
+        job_id = req.model_identifier
+        job_type = "Continuing"
     else:
         # Get a new job id, because we either train from a base model (when type is not int) or we dont want to
         # overwrite.
-        job_id = str(get_new_job_id())
+        job_id = get_new_job_id()
+        job_type = "Starting"
     if type(req.model_identifier) is str:
         registry_key = req.model_identifier
     else:
-        registry_key = get_registry_key_from_id(req.model_identifier)
+        registry_key, _ = get_registry_key_from_id(job_id)
     dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
-    log_dir = os.path.join(LOG_PATH, job_id)
+    log_dir = os.path.join(LOG_PATH, str(job_id))
     model_save_path = os.path.join(MODEL_PATH, f"{registry_key}_{job_id}.pt")
     info_save_path = model_save_path.rsplit(".", 1)[0] + ".json"
     if os.path.exists(log_dir) and restart:
@@ -64,14 +66,12 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     os.makedirs(MODEL_PATH, exist_ok=True)
     os.makedirs(JOBS_PATH, exist_ok=True)
 
+    logger.info(f"JOB {job_id}: {job_type} training of model {registry_key} with job id {job_id}. ")
     # To keep track of everything
     model_info = ModelInfo(registry_key, job_id)
     if os.path.exists(info_save_path):
         # Load existing model info if it exists. This means it has been trained before.
         model_info.load(info_save_path)
-        base_line_epochs = model_info.best_epoch
-    else:
-        base_line_epochs = 0
     model_info.update(
         {
             "model_identifier": req.model_identifier,
@@ -105,11 +105,12 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 test_ratio=0.1,
                 min_samples_for_split=0,
                 seed=42,
+                num_workers=6
             )
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             criterion = torch.nn.CrossEntropyLoss()
             writer = SummaryWriter(log_dir=log_dir)
-            logger.info(f"JOB {job_id}: Starting training of {req.model_identifier} on device {device}. ")
+            logger.info(f"JOB {job_id}: Device {device}. ")
 
             start_epoch = 1
             if os.path.exists(model_save_path):
@@ -124,7 +125,6 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
                 model = model.to(device)
 
-            best_dice, best_epoch = -float("inf"), -1
             early_stopping = EarlyStopping(patience=8)
             history = []
             val_available = val_loader is not None
@@ -170,22 +170,18 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 ))
                 metric_to_measure = val_dice if val_available else train_dice
                 model_info.training_step(train_loss, train_dice, train_iou, val_loss, val_dice, val_iou)
-                if metric_to_measure > best_dice:
+                if ((val_available and val_dice > model_info.best_val_dice) or
+                        (not val_available and train_dice > model_info.best_train_dice)):
                     logger.info(f"JOB {job_id}: Saving best model to {model_save_path}.")
-                    best_dice = metric_to_measure
-                    best_epoch = epoch
+                    if val_available:
+                        model_info.best_val_dice = val_dice
+                    model_info.best_train_dice = train_dice
+                    model_info.best_epoch = epoch
                     checkpoint_obj = {
                         "model_state_dict": model.state_dict(),
                         "optimizer_state_dict": optimizer.state_dict(),
                         "epoch": epoch,
                     }
-                    model_info.update(
-                        {
-                            "best_epoch": base_line_epochs + best_epoch,
-                            "best_val_dice": best_dice if val_available else None,
-                            "best_train_dice": train_dice,
-                        }
-                    )
                     torch.save(checkpoint_obj, model_save_path)
                     # Evaluate on test set if available and model improved
                     test_dice, test_iou = None, None
@@ -205,7 +201,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                         "epoch": epoch + 1,
                         "total_epochs": req.epochs,
                         "train_dice": train_dice,
-                        "val_dice": best_dice,
+                        "val_dice": val_dice,
                     }
                     save_job_status(job_id, "in progress", extra=status_extra)
                 if req.early_stopping and early_stopping.step(metric_to_measure):
@@ -215,10 +211,10 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
 
             status_extra = {
                 "history": history,
-                "best_epoch": best_epoch,
-                "best_val_dice": best_dice,
-                "test_dice": test_dice,
-                "test_iou": test_iou,
+                "best_epoch": model_info.best_epoch,
+                "best_val_dice": model_info.best_val_dice,
+                "test_dice": model_info.test_dice if test_available else None,
+                "test_iou": model_info.test_iou if test_available else None,
             }
             model_info.set_training_status(JobStatus.FINISHED)
             # Save meta info
