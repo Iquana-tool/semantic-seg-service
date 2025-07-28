@@ -62,11 +62,11 @@ class ModelInfo:
         self.val_dice = []
         self.val_iou = []
         self.val_loss = []
-        self.test_dice = None
-        self.test_iou = None
-        self.best_train_dice = None
-        self.best_val_dice = None
-        self.best_test_dice = None
+        self.test_dice = -1
+        self.test_iou = -1
+        self.best_train_dice = -1
+        self.best_val_dice = -1
+        self.best_test_dice = -1
 
     def update(self, data):
         """ Update the model information with a dictionary of data. """
