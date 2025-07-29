@@ -124,10 +124,7 @@ async def segment_batch(
     with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as mask_zip:
         for fname, mask_np, og_shape in zip(filenames, masks_np, og_shapes):
             logger.info(f"Processing file {fname} with original shape {og_shape} and mask shape {mask_np.shape}")
-            cv2.imwrite(f"./temp_masks/{fname.rsplit('.')[0]}_mask_before_resize.png",
-                        mask_np * (255 // 4))  # Save to temp directory for debugging
             mask_np = cv2.resize(mask_np, (og_shape[1], og_shape[0]), interpolation=cv2.INTER_NEAREST)
-            cv2.imwrite(f"./temp_masks/{fname.rsplit('.')[0]}_mask_after_resize.png", mask_np * (255 // 4))  # Save to temp directory for debugging
             success, encoded_img = cv2.imencode('.png', mask_np.astype(np.uint8))
             if not success:
                 raise RuntimeError("cv2.imencode failed!")
