@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  coral-automatic-segmentation-cuda:
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
+    image: coral-automatic-segmentation-cuda
+    container_name: coral-automatic-segmentation-cuda
+    ports:
+      - "7000:7000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: uvicorn main:app --host 0.0.0.0 --port 7000
