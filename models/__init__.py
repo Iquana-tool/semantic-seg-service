@@ -4,7 +4,7 @@ import os
 import torch
 from logging import getLogger
 from paths import MODEL_PATH
-from .unet import get_unet
+from .unet import get_unet, get_unet_plusplus
 
 logger = getLogger(__name__)
 

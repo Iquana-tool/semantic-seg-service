@@ -15,6 +15,10 @@ COPY requirements.txt .
 
 # Install dependencies
 RUN pip install -r requirements.txt
+RUN pip install "fastapi[standard]"
+
+# Install torch without CUDA
+RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # Stage 2: Final stage
 FROM python:3.13-slim
@@ -36,14 +40,11 @@ RUN apt-get update --allow-unauthenticated && \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the rest of the application code
+# Copy everything but data, logs, saved_models and training_jobs
 COPY . .
 
-# Create necessary directories for data and database
-RUN chmod -R 777 data
-
 # Expose the port the app runs on
-EXPOSE 8000
+EXPOSE 7000
 
 # Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7000", "--workers", "4"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7000", "--workers", "8"]

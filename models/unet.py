@@ -60,3 +60,9 @@ class UNet(nn.Module):
 def get_unet(num_classes=2, in_channels=3, **kwargs):
     """Easy function for model registry"""
     return UNet(in_channels=in_channels, num_classes=num_classes)
+
+
+def get_unet_plusplus(num_classes=2, in_channels=3, **kwargs):
+    """Placeholder for UNet++ model"""
+    # Implement UNet++ here or return a similar structure
+    pass # return Generic_UNetPlusPlus(input_channels=in_channels, num_classes=num_classes, **kwargs)
