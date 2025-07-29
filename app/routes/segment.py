@@ -112,9 +112,9 @@ async def segment_batch(
     batch = torch.cat(img_tensors, dim=0).to(device)  # [N, C, H, W]
     print(f"Batch shape: {batch.shape}, Device: {device}")
     logits = model(batch)  # [N, num_classes, H, W]
-    preds = torch.softmax(logits, dim=1)
+    #preds = torch.softmax(logits, dim=1)
     print(f"Logits shape: {logits.shape}")
-    pred = torch.argmax(preds, dim=1).int()  # [N, H, W]
+    pred = torch.argmax(logits, dim=1).int()  # [N, H, W]
     print(f"Prediction shape: {pred.shape}")
     masks_np = pred.cpu().numpy()  # shape: (N, H, W)
     print(f"Masks shape: {masks_np.shape}")
@@ -124,8 +124,10 @@ async def segment_batch(
     with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as mask_zip:
         for fname, mask_np, og_shape in zip(filenames, masks_np, og_shapes):
             logger.info(f"Processing file {fname} with original shape {og_shape} and mask shape {mask_np.shape}")
-            mask_np = cv2.resize(mask_np, (og_shape[0], og_shape[1]), interpolation=cv2.INTER_NEAREST)
-            cv2.imwrite(f"./temp_masks/{fname}_mask.png", mask_np * (255 // 4))  # Save to temp directory for debugging
+            cv2.imwrite(f"./temp_masks/{fname.rsplit('.')[0]}_mask_before_resize.png",
+                        mask_np * (255 // 4))  # Save to temp directory for debugging
+            mask_np = cv2.resize(mask_np, (og_shape[1], og_shape[0]), interpolation=cv2.INTER_NEAREST)
+            cv2.imwrite(f"./temp_masks/{fname.rsplit('.')[0]}_mask_after_resize.png", mask_np * (255 // 4))  # Save to temp directory for debugging
             success, encoded_img = cv2.imencode('.png', mask_np.astype(np.uint8))
             if not success:
                 raise RuntimeError("cv2.imencode failed!")

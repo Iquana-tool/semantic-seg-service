@@ -74,7 +74,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
         model_info.load(info_save_path)
     model_info.update(
         {
-            "model_identifier": req.model_identifier,
+            "model_identifier": registry_key,  # Must be registry key, not req.model_identifier
             "num_classes": req.num_classes,
             "in_channels": req.in_channels,
             "image_size": req.image_size,
@@ -153,7 +153,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                                                                 epoch=epoch,
                                                                 train=False)
 
-                logger.debug(f"JOB {job_id}: Epoch {epoch} / {req.epochs}. "
+                logger.debug(f"JOB {job_id}: Epoch {epoch} / {start_epoch + req.epochs}. "
                              f"Validation dice: {val_dice:.2%} \t Training dice: {train_dice:.2%}")
                 writer.add_scalar("Loss/train", train_loss, epoch)
                 writer.add_scalar("Loss/val", val_loss, epoch)

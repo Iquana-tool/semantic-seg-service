@@ -21,8 +21,9 @@ def mask_to_base64(mask_np: np.ndarray) -> str:
 
 def preprocess_image(img_arr, image_size=(256, 256)):
     """Preprocess the image for model input."""
-    img = torch.from_numpy(img_arr).float()  # float32, CxHxW
+    img = torch.from_numpy(img_arr) # int, RGB CxHxW
     img = torch.permute(img, (2, 0, 1))
+    img = torch.div(img, 255)  # Convert to float and normalize to [0, 1]
     img = TF.resize(img, image_size, interpolation=TF.InterpolationMode.BILINEAR)  # Resize to target size
     #img = TF.normalize(img, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # Normalize to [-1, 1]
-    return img.unsqueeze(0)
+    return img.unsqueeze(0).to(torch.float32)  # Add batch dimension and convert to float32
