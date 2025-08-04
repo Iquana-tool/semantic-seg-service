@@ -38,6 +38,7 @@ def read_job_status(job_id):
 
 @router.post("/start_training")
 async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks):
+    """ Start a training run for a specified model with a specified dataset id and training parameters."""
     logger.info(f"Received training request: {req}")
     # Restart = Starting training with a base model. Otherwise continue training specified model.
     restart = not type(req.model_identifier) is int
@@ -272,6 +273,7 @@ async def download_model(model_id: str):
 
 
 def run_one_epoch(model, loader, optimizer, criterion, device, writer: SummaryWriter, epoch, train=True):
+    """ Run one training/validation epoch. Save intermediate results to a tensorboard writer."""
     if loader is None:
         return 0.0, 0.0, 0.0
     running_loss, running_dice, running_iou, nbatches = 0.0, 0.0, 0.0, 0
@@ -316,10 +318,3 @@ def run_test(model, test_loader, device):
             ntest += 1
     n = max(ntest, 1)
     return test_dice / n, test_iou / n
-
-
-def unnormalize(imgs, mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]):
-    device = imgs.device
-    mean = torch.tensor(mean, dtype=imgs.dtype, device=device).view(1, -1, 1, 1)
-    std = torch.tensor(std, dtype=imgs.dtype, device=device).view(1, -1, 1, 1)
-    return imgs * std + mean

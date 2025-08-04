@@ -20,8 +20,9 @@ router = APIRouter(prefix="/segment", tags=["segment"])
 logger = getLogger(__name__)
 
 
-@router.post("/segment_base64")
+@router.post("/segment_base64", deprecated=True)
 async def segment_b64image(request: B64SegmentationRequest):
+    """Segment one base64 encoded image."""
     logger.info("Segment image request received for model %s.", request.model_id)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -140,7 +141,7 @@ async def segment_batch(
     )
 
 
-@router.post("/segment_batch_local")
+@router.post("/segment_batch_local", deprecated=True)
 async def segment_batch_local(model_id: str, local_file_paths: list[str], local_save_paths: list[str]):
     """
     Segment a batch of images using the specified model with local file paths.
