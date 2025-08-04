@@ -11,7 +11,7 @@ services:
       - "7000:7000"
     environment:
       - PYTHONUNBUFFERED=1
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://coral.ni.dfki.de,http://localhost:8000}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://coral.ni.dfki.de,http://localhost:8000,http://0.0.0.0/8000}
     deploy:
       resources:
         reservations:
