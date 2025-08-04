@@ -1,16 +1,16 @@
 import json
 import os
 
+import segmentation_models_pytorch as smp
 import torch
 from logging import getLogger
 from paths import MODEL_PATH
-from .unet import get_unet, get_unet_plusplus
 
 logger = getLogger(__name__)
 
 MODEL_REGISTRY = {
     "unet": {
-        "getter": get_unet,  # Function to get the UNet model, absolutely required
+        "getter": smp.Unet,  # Function to get the UNet model, absolutely required
         "Name": "UNet",
         "Description": "Simple Decoder Encoder Network with Skip Connections. UNet is simple but powerful.",
         "Training speed": "Medium",
@@ -18,7 +18,33 @@ MODEL_REGISTRY = {
         "Automatically tuned": False,
         "Pre-trained": False
     },
-    # Placeholders for other models, e.g. "nnunet": get_nnunet
+    "unetplusplus":{
+        "getter": smp.UnetPlusPlus,  # Function to get the UNet model, absolutely required
+        "Name": "UNet++",
+        "Description": "Advanced Decoder Encoder Network with Nested Skip Connections.",
+        "Training speed": "Medium",
+        "Model size": "Small",
+        "Automatically tuned": False,
+        "Pre-trained": False
+    },
+    "deeplabv3": {
+        "getter": smp.DeepLabV3,
+        "Name": "DeepLab V3",
+        "Description": "DeepLabV3 is a semantic image segmentation model that uses atrous convolution to capture multi-scale context by adopting multiple atrous rates.",
+        "Training speed": "Slow",
+        "Model size": "Large",
+        "Automatically tuned": False,
+        "Pre-trained": False
+    },
+    "deeplabv3plus": {
+        "getter": smp.DeepLabV3Plus,
+        "Name": "DeepLab V3+",
+        "Description": "DeepLabV3+ extends DeepLabV3 by adding a decoder module to refine segmentation results, particularly along object boundaries, using atrous convolution for multi-scale context.",
+        "Training speed": "Slow",
+        "Model size": "Large",
+        "Automatically tuned": False,
+        "Pre-trained": False
+    }
 }
 
 

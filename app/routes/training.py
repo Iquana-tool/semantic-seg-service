@@ -121,7 +121,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 logger.info(f"JOB {job_id}: Resuming training of {req.model_identifier} from epoch {start_epoch}.")
             else:
                 logger.warning(f"JOB {job_id}: Checkpoint {model_save_path} does not exist. Starting training from scratch.")
-                model = (MODEL_REGISTRY[req.model_identifier])["getter"](num_classes=req.num_classes, in_channels=req.in_channels)
+                model = (MODEL_REGISTRY[registry_key])["getter"](classes=req.num_classes, in_channels=req.in_channels)
                 optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
                 model = model.to(device)
 
@@ -223,7 +223,12 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             save_job_status(job_id, "completed", result=model_save_path, extra=status_extra)
 
         except Exception as e:
-            model_info.set_training_status(JobStatus.STOPPED)
+            if type(e) == FileNotFoundError:
+                # We cause this error on purpose to stop the background task
+                model_info.set_training_status(JobStatus.STOPPED)
+            else:
+                # If there is another error, then the task failed
+                model_info.set_training_status(JobStatus.FAILED)
             # Save meta info
             model_info.save(info_save_path)
             save_job_status(job_id, "failed", result=str(e))
