@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile
     image: coral-automatic-segmentation-cpu
     container_name: coral-automatic-segmentation-cpu
+    networks:
+      - coral-network
     ports:
       - "7000:7000"
     environment:
