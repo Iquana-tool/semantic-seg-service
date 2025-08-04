@@ -4,7 +4,7 @@ services:
   coral-automatic-segmentation-cuda:
     build:
       context: .
-      dockerfile: Dockerfile.cuda
+      dockerfile: Dockerfile-cuda
     image: coral-automatic-segmentation-cuda
     container_name: coral-automatic-segmentation-cuda
     ports:
