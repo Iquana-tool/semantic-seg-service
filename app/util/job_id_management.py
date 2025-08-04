@@ -4,6 +4,8 @@ from models import parse_weight_file_name
 
 
 def get_new_job_id():
+    """Find a new job id. Model id and job id are the same thing. They are just separated because we treated them
+        differently at the start."""
     model_ids = sorted([parse_weight_file_name(filename)[1] for filename in os.listdir(MODEL_PATH) if filename.endswith(".json")])
     if not model_ids:
         return 0

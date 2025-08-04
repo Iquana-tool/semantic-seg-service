@@ -1,5 +1,7 @@
 
 class EarlyStopping:
+    """Implements Early Stopping. Early Stopping stops the training when a certain threshold is not reached in a
+    specified amount of epochs."""
     def __init__(self, patience=8, min_delta=0.0):
         self.patience = patience
         self.min_delta = min_delta

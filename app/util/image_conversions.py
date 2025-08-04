@@ -8,11 +8,13 @@ from PIL import Image
 
 
 def b64_to_pil(img_b64: str) -> Image.Image:
+    """Convert base64 image to Pillow Image."""
     image_data = base64.b64decode(img_b64)
     return Image.open(BytesIO(image_data)).convert('RGB')
 
 
-def mask_to_base64(mask_np: np.ndarray) -> str:
+def ndarray_to_base64(mask_np: np.ndarray) -> str:
+    """Convert a numpy array to a base64 image."""
     mask_img = Image.fromarray(mask_np.astype(np.uint8))
     buf = BytesIO()
     mask_img.save(buf, format='PNG')

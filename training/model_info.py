@@ -18,9 +18,10 @@ class JobStatus(Enum):
 
 
 class ModelInfo:
-    """ This class keeps track of the model information, such as the registry key and model ID. But also about the
-        training status, such as whether the model is currently being trained or not or inference status.
-        It allows easy saving and loading of the model information to/from a file.
+    """
+    This class keeps track of the model information, such as the registry key and model ID. But also about the
+    training status, such as whether the model is currently being trained or not or inference status.
+    It allows easy saving and loading of the model information to/from a file.
     """
     def __init__(self, registry_key=None, job_id=None):
 

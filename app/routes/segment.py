@@ -51,7 +51,7 @@ async def segment_b64image(request: B64SegmentationRequest):
     mask_np = pred.squeeze(0).cpu().numpy()
 
     # 4. Encode mask as base64 PNG
-    mask_b64 = mask_to_base64(mask_np)
+    mask_b64 = ndarray_to_base64(mask_np)
 
     return {
         "mask_b64": mask_b64,

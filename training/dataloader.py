@@ -13,6 +13,7 @@ logger = getLogger(__name__)
 
 
 class SegmentationTensorDataset(Dataset):
+    """Dataset class."""
     def __init__(
         self,
         dataset_root: str,

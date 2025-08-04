@@ -8,6 +8,12 @@ from paths import MODEL_PATH
 
 logger = getLogger(__name__)
 
+# The model registry holds all info about the base models and a function call with which they can get instantiated.
+# You can add a new model simply by adding it to this list. The model instantiation will only get the following
+# parameters:
+# - classes: The number of classes
+# - in_channels: The number of input channels on the images (usually 3 for RGB).
+# All other parameters must be given via defaults. You can add different configurations by creating wrapper functions.
 MODEL_REGISTRY = {
     "unet": {
         "getter": smp.Unet,  # Function to get the UNet model, absolutely required
