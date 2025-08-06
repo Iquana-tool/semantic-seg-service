@@ -1,12 +1,14 @@
 import json
 import os
+import shutil
 from collections import defaultdict
 from logging import getLogger
 from typing import Union
 
+from absl.logging import LOG_DIR
 from fastapi import APIRouter, UploadFile, File
 from models import MODEL_REGISTRY
-from paths import MODEL_PATH, JOBS_PATH
+from paths import MODEL_PATH, JOBS_PATH, LOG_PATH
 
 router = APIRouter(prefix="/models", tags=["models"])
 logger = getLogger(__name__)
@@ -88,3 +90,29 @@ async def get_model_metadata(model_id: Union[str, int]):
     with open(meta_file, "r") as f:
         metadata = json.load(f)
     return {"success": True, "metadata": metadata}
+
+
+@router.delete("/delete_model/{model_id}")
+async def delete_model(model_id: int):
+    """Deletes a model based on its id."""
+    logger.debug(f"Deleting model with id: {model_id}.")
+
+    # Delete the weights and meta data
+    files = [f for f in os.listdir(MODEL_PATH) if f.split("_")[-1].split(".")[0] == str(model_id)]
+    for file in files:
+        os.remove(os.path.join(MODEL_PATH, file))
+
+    # Delete the logs if they exist. They could not exist if the model was stopped.
+    log_dir = os.path.join(LOG_PATH, str(model_id))
+    if os.path.exists(log_dir):
+        shutil.rmtree(log_dir)
+
+    # Delete the job
+    job_path = os.path.join(JOBS_PATH, str(model_id) + ".json")
+    if os.path.exists(job_path):
+        os.remove(job_path)
+
+    return {
+        "success": True,
+        "message": f"Model with id {model_id} successfully removed."
+    }

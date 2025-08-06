@@ -76,7 +76,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     model_info.update(
         {
             "model_identifier": registry_key,  # Must be registry key, not req.model_identifier
-            "num_classes": req.num_classes,
+            "classes": req.num_classes,
             "in_channels": req.in_channels,
             "image_size": req.image_size,
             "total_epochs": req.epochs,

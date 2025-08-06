@@ -48,7 +48,7 @@ class ModelInfo:
         self.augment = None
         self.early_stopping = None
         self.lr = None
-        self.num_classes = None
+        self.classes = None
         self.in_channels = None
         self.image_size = None
         self.num_input_images = None
