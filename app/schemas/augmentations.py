@@ -9,7 +9,9 @@ from torchvision.transforms import functional as TF
 
 
 class Augmentations(BaseModel):
-    """Save configurations for augmentations."""
+    """ Schema for augmentations. Augmentations are any image operations that should be applied before an image is fed to
+        the model. This can include cropping etc, but also normalizing.
+    """
     crop_relative_min: float = Field(
         default=0.25,
         description="Minimum relative size for random crop (e.g., 0.25 = up to 25% of image size)."
