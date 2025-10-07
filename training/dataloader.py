@@ -18,14 +18,16 @@ class SegmentationTensorDataset(Dataset):
         self,
         dataset_root: str,
         augmentations: Augmentations,
-        preprocessing: Preprocessing,
+        mean: list[float] = None,
+        std: list[float] = None,
         image_size: Tuple[int, int] = (256, 256),
     ):
         """
         Args:
             dataset_root (str): Folder with 'images/' and 'masks/' subdirs
             augmentations (Augmentations): Apply the specified augmentations
-            preprocessing (Preprocessing): Apply the specified preprocessing
+            mean (list[float]): Mean values to normalize image to. If None, no normalization is applied.
+            std (list[float]): Std values to normalize image to. If None, no normalization is applied.
             image_size (tuple): Final image size (H, W)
         """
         self.image_dir = os.path.join(dataset_root, "images")
@@ -36,7 +38,8 @@ class SegmentationTensorDataset(Dataset):
         )
 
         self.augmentations = augmentations
-        self.preprocessing = preprocessing
+        self.mean = mean
+        self.std = std
         self.image_size = list(image_size)
 
     def __len__(self):
@@ -63,9 +66,9 @@ class SegmentationTensorDataset(Dataset):
         image = TF.resize(image, self.image_size, interpolation=TF.InterpolationMode.BILINEAR)
         mask = TF.resize(mask.unsqueeze(0), self.image_size, interpolation=TF.InterpolationMode.NEAREST).squeeze(0)
 
-        # Preprocess
-        image = self.preprocessing(image)
-
+        # Normalize
+        if self.mean is not None and self.std is not None:
+            image = TF.normalize(image, self.mean, self.std)
         return image, mask
 
 
