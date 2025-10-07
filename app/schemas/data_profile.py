@@ -1,0 +1,29 @@
+from pydantic import BaseModel, Field
+
+from app.schemas.preprocessing import Preprocessing
+
+
+class DataProfile(BaseModel):
+    num_samples: int = Field(default=0, description="Number of samples in the dataset.")
+
+    num_classes: int = Field(default=0, description="Number of classes in the dataset.")
+    classes_dict: dict[int, str] = Field(default_factory=dict, description="Dictionary mapping class ID to its name.")
+
+    image_size: tuple[int, int] = Field(default=(256, 256), description="Images will be resized to this size before use.")
+    preprocessing: Preprocessing = Field(default_factory=Preprocessing, description="Preprocessing used for training.")
+
+    train_ratio: float = Field(default=0.8, description="Ratio of training samples in the dataset.")
+    val_ratio: float = Field(default=0.1, description="Ratio of validation samples in the dataset.")
+    test_ratio: float = Field(default=0.1, description="Ratio of test samples in the dataset.")
+    train_indices: list[int] = Field(default_factory=list, description="List of indices of training samples in the dataset.")
+    val_indices: list[int] = Field(default_factory=list, description="List of indices of validation samples in the dataset.")
+    test_indices: list[int] = Field(default_factory=list, description="List of indices of test samples in the dataset.")
+
+    def is_compatible(self, other):
+        return (
+            self.num_classes == other.num_classes
+            and
+            self.classes_dict == other.classes_dict
+            and
+            self.image_size == other.image_size
+        )

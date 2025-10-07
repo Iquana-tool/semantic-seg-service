@@ -8,7 +8,7 @@ from typing import Union
 from absl.logging import LOG_DIR
 from fastapi import APIRouter, UploadFile, File
 from models import MODEL_REGISTRY
-from paths import MODEL_PATH, JOBS_PATH, LOG_PATH
+from paths import MODEL_PATH, TRAINING_RUNS_PATH, LOG_PATH
 
 router = APIRouter(prefix="/models", tags=["models"])
 logger = getLogger(__name__)
@@ -59,11 +59,11 @@ async def get_training_models():
     """Retrieve all models that are currently being trained."""
     logger.debug("Fetching currently training segmentation models.")
     # Get the training models from the weights directory
-    training_models = [file for file in os.listdir(JOBS_PATH) if file.endswith(".json")]
+    training_models = [file for file in os.listdir(TRAINING_RUNS_PATH) if file.endswith(".json")]
     training_models_result = []
 
     for job_file in training_models:
-        job_info = json.load(open(os.path.join(JOBS_PATH, job_file)))
+        job_info = json.load(open(os.path.join(TRAINING_RUNS_PATH, job_file)))
         if job_info["status"] == "in progress":
             training_models_result.append(job_file.split(".")[0])  # Get the job ID without the .json extension
     return {"success": True,
@@ -108,7 +108,7 @@ async def delete_model(model_id: int):
         shutil.rmtree(log_dir)
 
     # Delete the job
-    job_path = os.path.join(JOBS_PATH, str(model_id) + ".json")
+    job_path = os.path.join(TRAINING_RUNS_PATH, str(model_id) + ".json")
     if os.path.exists(job_path):
         os.remove(job_path)
 

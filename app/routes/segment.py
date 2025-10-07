@@ -1,20 +1,16 @@
-import cv2
-import numpy as np
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from logging import getLogger
-from models import load_model_from_id, load_metadata_from_id
+from models import load_metadata_from_id
 from app.schemas.segment import B64SegmentationRequest
 from app.util.image_conversions import *
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import torch
-from torchvision.utils import save_image
 from models import load_model_from_id
 from PIL import Image
 from io import BytesIO
 import zipfile
 import os
-from training.model_info import ModelInfo, JobStatus
-
+from app.schemas.training_run import JobStatusEnum, TrainingRun
 
 router = APIRouter(prefix="/segment", tags=["segment"])
 logger = getLogger(__name__)
@@ -81,9 +77,9 @@ async def segment_batch(
         model, chkpt = load_model_from_id(model_id, device, eval_mode=True)
 
         meta, info_save_path = load_metadata_from_id(model_id)
-        model_info = ModelInfo()
+        model_info = TrainingRun()
         model_info.load(info_save_path)
-        model_info.set_inference_status(JobStatus.IN_PROGRESS)
+        model_info.set_inference_status(JobStatusEnum.IN_PROGRESS)
         image_size = model_info.image_size
         model_info.save(info_save_path)
     except Exception as e:
@@ -131,7 +127,7 @@ async def segment_batch(
                 raise RuntimeError("cv2.imencode failed!")
             mask_zip.writestr(fname, encoded_img.tobytes())
     zip_buf.seek(0)
-    model_info.set_inference_status(JobStatus.FINISHED)
+    model_info.set_inference_status(JobStatusEnum.FINISHED)
     model_info.save(info_save_path)
     # Return zip as file download
     return StreamingResponse(

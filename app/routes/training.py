@@ -2,116 +2,127 @@ import os
 import shutil
 import json
 from fastapi import APIRouter, BackgroundTasks
-from app.schemas.training import TrainingRequest
+from app.schemas.training_request import TrainingRequest
+from models.model_registry import ModelRegistryEntry
 from training.dataloader import get_dataloader
-from models import MODEL_REGISTRY
-from paths import DATA_PATH, MODEL_PATH, LOG_PATH, JOBS_PATH
+from app.state import MODEL_REGISTRY
+from paths import DATA_PATH, MODEL_PATH, LOG_PATH, TRAINING_RUNS_PATH
 from logging import getLogger
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from training.metrics import dice_coeff, iou_score
 from training.early_stopping import EarlyStopping
-from models import load_model_from_checkpoint_path, get_registry_key_from_id, delete_model
-from training.model_info import ModelInfo, JobStatus
-from app.util.job_id_management import get_new_job_id
+from models import load_model_from_checkpoint_path
+from app.schemas.training_run import JobStatusEnum, TrainingRun, TrainingProgress, RunIdentity
+from app.schemas.data_profile import DataProfile
 
 router = APIRouter(prefix="/training", tags=["training"])
 logger = getLogger(__name__)
 
 
 def save_job_status(job_id, status: str, result: str = "", extra: dict = None):
-    os.makedirs(JOBS_PATH, exist_ok=True)
+    os.makedirs(TRAINING_RUNS_PATH, exist_ok=True)
     obj = {"status": status, "result": result}
     if extra:
         obj.update(extra)
-    with open(os.path.join(JOBS_PATH, f"{job_id}.json"), "w") as f:
+    with open(os.path.join(TRAINING_RUNS_PATH, f"{job_id}.json"), "w") as f:
         json.dump(obj, f)
 
 
 def read_job_status(job_id):
     try:
-        with open(os.path.join(JOBS_PATH, f"{job_id}.json"), "r") as f:
+        with open(os.path.join(TRAINING_RUNS_PATH, f"{job_id}.json"), "r") as f:
             return json.load(f)
     except Exception:
         return None
+
+
+def get_training_run(model_registry_entry: ModelRegistryEntry,
+                    data_profile: DataProfile,
+                    req: TrainingRequest) -> TrainingRun:
+    """ Gets or creates a TrainingRun object based on the given ModelRegistryEntry."""
+    if model_registry_entry.info.is_base_model():
+        model_registry_key = MODEL_REGISTRY.get_available_new_key_for_base_model(req.model_registry_key)
+        # We need to create a new TrainingRun object
+        training_run: TrainingRun = TrainingRun(
+            run_identity=RunIdentity(
+                model_identifier=model_registry_key,
+                dataset_identifier=req.dataset_identifier,
+            ),
+            hyperparams=req.hyper_params,
+            augmentations=req.augmentations,
+            data_profile=data_profile,
+            progress=TrainingProgress(total_epochs=req.num_epochs)
+        )
+    else:
+        # Model was trained before. We already have a training run object.
+        training_run: TrainingRun = model_registry_entry.info.training_run
+
+        # Check if the old model is compatible with the new data profile.
+        if not data_profile.is_compatible(training_run.data_profile):
+            error_msg = f"New data profile does not match data_profile of previous run. This can be" \
+                        f" due to the changes in the classes or the image size. Note that these changes require new " \
+                        f"models to be trained and old models cannot be retrained on the new data."
+            logger.error(error_msg)
+            raise Exception(error_msg)
+
+        # Update the total_epochs by adding the current epoch to the total epochs.
+        training_run.progress.total_epochs = training_run.progress.current_epoch + req.num_epochs
+        # Update other fields
+        training_run.update_data_profile(data_profile)
+        training_run.update_hyperparams(req.hyper_params)
+        training_run.update_augmentations(req.augmentations)
+    return training_run
+
 
 
 @router.post("/start_training")
 async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks):
     """ Start a training run for a specified model with a specified dataset id and training parameters."""
     logger.info(f"Received training request: {req}")
-    # Restart = Starting training with a base model. Otherwise continue training specified model.
-    restart = not type(req.model_identifier) is int
-    if type(req.model_identifier) is int:
-        # We overwrite the old job id, instead of giving a new one.
-        job_id = req.model_identifier
-        job_type = "Continuing"
-    else:
-        # Get a new job id, because we either train from a base model (when type is not int) or we dont want to
-        # overwrite.
-        job_id = get_new_job_id()
-        job_type = "Starting"
-    if type(req.model_identifier) is str:
-        registry_key = req.model_identifier
-    else:
-        registry_key, _ = get_registry_key_from_id(job_id)
+    # Load the data profile from disk
     dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
-    log_dir = os.path.join(LOG_PATH, str(job_id))
-    model_save_path = os.path.join(MODEL_PATH, f"{registry_key}_{job_id}.pt")
-    info_save_path = model_save_path.rsplit(".", 1)[0] + ".json"
-    if os.path.exists(log_dir) and restart:
+    data_profile = DataProfile.model_validate_json(os.path.join(dataset_path, "data_profile.json"))
+
+    # Get the model registry entry and update its training run
+    model_registry_entry = MODEL_REGISTRY[req.model_registry_key]
+    model_registry_entry.info.training_run = get_training_run(model_registry_entry, data_profile, req)
+
+    # For easier access to the fields
+    training_run = model_registry_entry.info.training_run
+    hyperparams = training_run.hyperparams
+    augmentations = training_run.augmentations
+    progress = training_run.progress
+    model_registry_key = training_run.run_identity.model_identifier
+
+    log_dir = os.path.join(LOG_PATH, str(model_registry_key))
+    model_save_path = os.path.join(MODEL_PATH, f"{model_registry_key}.pt")
+    run_save_path = os.path.join(TRAINING_RUNS_PATH, f"{model_registry_key}.json")
+    if os.path.exists(log_dir):
         # Restarting training removes the entire log dir
-        logger.warning(f"JOB {job_id}: Log directory already exists: {log_dir}. Overwriting logs.")
+        logger.warning(f"MODEL {model_registry_key}:: Log directory already exists: {log_dir}. Overwriting logs.")
         shutil.rmtree(log_dir)
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(MODEL_PATH, exist_ok=True)
-    os.makedirs(JOBS_PATH, exist_ok=True)
+    os.makedirs(TRAINING_RUNS_PATH, exist_ok=True)
 
-    logger.info(f"JOB {job_id}: {job_type} training of model {registry_key} with job id {job_id}. ")
-    # To keep track of everything
-    model_info = ModelInfo(registry_key, job_id)
-    if os.path.exists(info_save_path):
-        # Load existing model info if it exists. This means it has been trained before.
-        model_info.load(info_save_path)
-    model_info.update(
-        {
-            "model_identifier": registry_key,  # Must be registry key, not req.model_identifier
-            "classes": req.num_classes,
-            "in_channels": req.in_channels,
-            "image_size": req.image_size,
-            "total_epochs": req.epochs,
-            "dataset_id": req.dataset_id,
-            "batch_size": req.batch_size,
-            "augment": req.augment,
-            "lr": req.lr,
-            "early_stopping": req.early_stopping,
-        }
-    )
-    model_info.set_training_status(JobStatus.STARTING)
-    model_info.save(info_save_path)
-
-    save_job_status(job_id, "queued")
+    training_run.set_status("training", JobStatusEnum.STARTING, "Training is starting...")
 
     def background_train_job():
         try:
             # Your request and path setup; assumes variables: req, dataset_path, job_id, log_dir, model_save_path
             train_loader, val_loader, test_loader = get_dataloader(
                 dataset_path,
-                batch_size=req.batch_size,
-                augment=req.augment,
-                normalize=False,
-                image_size=req.image_size,
-                split=True,
-                val_ratio=0.1,
-                test_ratio=0.1,
-                min_samples_for_split=0,
-                seed=42,
+                batch_size=hyperparams.batch_size,
+                augmentations=augmentations,
+                preprocessing=data_profile.preprocessing,
+                data_profile=data_profile,
                 num_workers=6
             )
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             criterion = torch.nn.CrossEntropyLoss()
             writer = SummaryWriter(log_dir=log_dir)
-            logger.info(f"JOB {job_id}: Device {device}. ")
+            logger.info(f"Model {model_registry_key}: Device {device}.")
 
             start_epoch = 1
             if os.path.exists(model_save_path):
@@ -133,7 +144,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             logger.info(f"JOB {job_id}: Validation set available: {val_available}, Test set available: {test_available}")
             val_loss, val_dice, val_iou = -1., -1., -1.
             save_job_status(job_id, "in progress")
-            model_info.set_training_status(JobStatus.IN_PROGRESS)
+            model_info.set_training_status(JobStatusEnum.IN_PROGRESS)
             model_info.num_input_images = len(train_loader.dataset)
             for epoch in range(start_epoch, start_epoch + req.epochs):
                 train_loss, train_dice, train_iou = run_one_epoch(model,
@@ -196,7 +207,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                             }
                         )
                 # Save meta info
-                model_info.save(info_save_path)
+                model_info.save(run_save_path)
                 if epoch % 5 == 0:
                     status_extra = {
                         "epoch": epoch + 1,
@@ -217,21 +228,21 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 "test_dice": model_info.test_dice if test_available else None,
                 "test_iou": model_info.test_iou if test_available else None,
             }
-            model_info.set_training_status(JobStatus.FINISHED)
+            model_info.set_training_status(JobStatusEnum.FINISHED)
             # Save meta info
-            model_info.save(info_save_path)
+            model_info.save(run_save_path)
             logger.info(f"JOB {job_id}: Completed.")
             save_job_status(job_id, "completed", result=model_save_path, extra=status_extra)
 
         except Exception as e:
             if type(e) == FileNotFoundError:
                 # We cause this error on purpose to stop the background task
-                model_info.set_training_status(JobStatus.STOPPED)
+                model_info.set_training_status(JobStatusEnum.STOPPED)
             else:
                 # If there is another error, then the task failed
-                model_info.set_training_status(JobStatus.FAILED)
+                model_info.set_training_status(JobStatusEnum.FAILED)
             # Save meta info
-            model_info.save(info_save_path)
+            model_info.save(run_save_path)
             save_job_status(job_id, "failed", result=str(e))
             raise e
 
