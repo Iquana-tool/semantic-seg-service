@@ -15,9 +15,9 @@ class DataProfile(BaseModel):
     train_ratio: float = Field(default=0.8, description="Ratio of training samples in the dataset.")
     val_ratio: float = Field(default=0.1, description="Ratio of validation samples in the dataset.")
     test_ratio: float = Field(default=0.1, description="Ratio of test samples in the dataset.")
-    train_indices: list[int] = Field(default_factory=list, description="List of indices of training samples in the dataset.")
-    val_indices: list[int] = Field(default_factory=list, description="List of indices of validation samples in the dataset.")
-    test_indices: list[int] = Field(default_factory=list, description="List of indices of test samples in the dataset.")
+    train_files: list[str] = Field(default_factory=list, description="List of indices of training samples in the dataset.")
+    val_files: list[str] = Field(default_factory=list, description="List of indices of validation samples in the dataset.")
+    test_files: list[str] = Field(default_factory=list, description="List of indices of test samples in the dataset.")
 
     def is_compatible(self, other):
         return (
