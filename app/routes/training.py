@@ -115,7 +115,6 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 dataset_path,
                 batch_size=hyperparams.batch_size,
                 augmentations=augmentations,
-                preprocessing=data_profile.preprocessing,
                 data_profile=data_profile,
                 num_workers=6
             )
