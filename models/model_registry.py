@@ -81,3 +81,6 @@ class ModelRegistry(BaseModel):
                     return base_model_key + "_" + str(i)
         return base_model_key + "_" + str(len(existing))
 
+    def get_task_id_of_model(self, key):
+        return self.models[key].info.training_run.task_id
+
