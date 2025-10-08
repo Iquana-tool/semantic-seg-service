@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 from app.schemas.data_profile import DataProfile
 from app.schemas.training_request import HyperParams
 from app.schemas.augmentations import Augmentations
-from models.model_info import logger
 
 
 class JobStatusEnum(Enum):
