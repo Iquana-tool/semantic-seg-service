@@ -15,6 +15,7 @@ from models.model_info import logger
 class JobStatusEnum(Enum):
     """ Enum for the job status. """
     IDLE = "idle"
+    QUEUED = "queued"
     STARTING = "starting"
     IN_PROGRESS = "in_progress"
     FINISHED = "finished"
@@ -169,6 +170,7 @@ class TrainingRun(BaseModel):
     training status, such as whether the model is currently being trained or not or inference status.
     It allows easy saving and loading of the model information to/from a file.
     """
+    task_id: str | None = Field(None, description="Task ID given by celery. If none, has no task associated with it.")
     dataset_identifier: int = Field(..., description="Unique string identifying the dataset.")
     created_at: datetime = Field(default=datetime.now(), description="Date and time the job was created.")
     updated_at: datetime = Field(default=datetime.now(), description="Date and time the job was updated.")
