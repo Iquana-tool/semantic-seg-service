@@ -7,7 +7,7 @@ from logging import getLogger
 from pydantic import BaseModel, Field
 
 from app.schemas.data_profile import DataProfile
-from app.schemas.training_request import HyperParams
+from app.schemas.hyperparams import HyperParams
 from app.schemas.augmentations import Augmentations
 
 
