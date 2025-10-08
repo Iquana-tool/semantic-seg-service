@@ -4,6 +4,12 @@ from app.schemas.preprocessing import Preprocessing
 
 
 class DataProfile(BaseModel):
+    """
+    Dataset profile class. Keeps track of some information about the datasets like number of classes and
+    preprocessing. Additionally, makes sure that each run uses the same training and testing indices. This is very
+    important, because otherwise we might switch previous training data into the test or validation set and then return
+    misleading model performances.
+    """
     num_samples: int = Field(default=0, description="Number of samples in the dataset.")
 
     num_classes: int = Field(default=0, description="Number of classes in the dataset.")
