@@ -1,9 +1,13 @@
+import os
 from typing import Union, Literal, List
-
+from logging import getLogger
 from pydantic import BaseModel, Field
-
-from models.model_loader import ModelLoader
+from paths import MODEL_REGISTRY_ENTRY_PATHS
+from models.model_loader import ModelLoader, PathModelLoader
 from models.model_info import ModelInfo
+
+
+logger = getLogger(__name__)
 
 
 class ModelRegistryEntry(BaseModel):
@@ -18,7 +22,8 @@ class ModelRegistryEntry(BaseModel):
 
 class ModelRegistry(BaseModel):
     """ Model Registry class to combine all available models."""
-    models: dict[str, ModelRegistryEntry] = Field(..., description="Dictionary mapping from registry keys to model entries.")
+    models: dict[str, ModelRegistryEntry] = Field(default_factory=dict,
+                                                  description="Dictionary mapping from registry keys to model entries.")
 
     def register(self, name, entry: ModelRegistryEntry):
         """ Register a new model in the registry by passing an instance of a ModelRegistryEntry class."""
@@ -36,6 +41,7 @@ class ModelRegistry(BaseModel):
             self,
             filter_type: Union[Literal["base", "trained"], None] = None,
             filter_availability: bool = False,
+            filter_dataset: int = None,
             return_as_json: bool = False,
     ) -> List[dict]:
         """ List models after applying some filters.
@@ -44,6 +50,7 @@ class ModelRegistry(BaseModel):
         :param filter_availability: Filter models based on availability. If set to true, only returns models that can
             be loaded in the current repo, eg. for example if their weights and configs are present. Each model loader
             class implements the availability logic by themselves.
+        :param filter_dataset: Filter models based on a specific dataset.
         :param return_as_json: If set to true, return model info as json.
         :returns: A list of either the model info objects or a list of json serializable dicts.
         """
@@ -62,7 +69,14 @@ class ModelRegistry(BaseModel):
                 if model_entry.loader.is_available()
             )
 
-        return [model_entry.info.to_json() if return_as_json else model_entry.info for model_entry in filtered_models]
+        if filter_dataset is not None:
+            filtered_models = (
+                model_entry
+                for model_entry in filtered_models
+                if model_entry.info.is_base_model() or model_entry.info.training_run.dataset_identifier == filter_dataset
+            )
+
+        return [model_entry.info.model_dump_json() if return_as_json else model_entry.info.model_dump() for model_entry in filtered_models]
 
     def __getitem__(self, item):
         return self.models[item]
@@ -84,3 +98,27 @@ class ModelRegistry(BaseModel):
     def get_task_id_of_model(self, key):
         return self.models[key].info.training_run.task_id
 
+    def delete_model(self, key):
+        entry = self.models[key]
+        if entry.info.is_base_model():
+            return {
+                "success": False,
+                "message": "Cannot delete base models!"
+            }
+        else:
+            try:
+                # Must be a pathmodel loader, because it is not base model
+                loader: PathModelLoader = entry.loader
+                os.remove(loader.path_to_model)
+            except Exception as e:
+                # Shouldnt happen, but okay, we move
+                logger.error(e)
+                pass
+            finally:
+                registry_entry_path = os.path.join(MODEL_REGISTRY_ENTRY_PATHS, key + ".json")
+                os.remove(registry_entry_path)
+                del self.models[key]
+                return {
+                    "success": True,
+                    "message": f"Successfully deleted model {key}"
+                }
