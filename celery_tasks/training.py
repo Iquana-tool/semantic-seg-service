@@ -2,7 +2,6 @@ import os
 from typing import Literal
 
 import torch
-from anyio.abc import TaskStatus
 from celery import shared_task
 from torch.utils.tensorboard import SummaryWriter
 from app.state import MODEL_REGISTRY
