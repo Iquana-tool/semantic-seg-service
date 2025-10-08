@@ -128,7 +128,8 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             model.to(device)
 
             # Load the optimizer
-            # TODO
+            optimizer = hyperparams.get_optimizer(model.parameters())
+            lr_scheduler = hyperparams.get_lr_scheduler(optimizer, progress.total_epochs)
 
             # Set availability flags -> Better readability
             val_available = val_loader is not None
@@ -139,7 +140,7 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
 
             training_run.set_status("training", JobStatusEnum.IN_PROGRESS,
                                     "Model and data loaded. Commencing training.")
-            for epoch in range(start_epoch, start_epoch + req.epochs):
+            for epoch in range(progress.current_epoch, progress.total_epochs):
                 train_metrics = run_one_epoch(model,
                                               train_loader,
                                               optimizer,
@@ -161,6 +162,9 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                     writer_add_metrics("val", val_metrics, writer, epoch)
                 else:
                     val_metrics = None
+
+                if lr_scheduler is not None:
+                    lr_scheduler.step(epoch)
 
                 # Pass the metrics to the progress tracker and check whether the new epoch was better than the best yet
                 is_new_best_epoch = progress.training_step(train_metrics, val_metrics)
