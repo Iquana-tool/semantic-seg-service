@@ -9,7 +9,7 @@ from models.model_loader import PathModelLoader
 from models.model_registry import ModelRegistryEntry
 from training.dataloader import get_dataloader
 from app.state import MODEL_REGISTRY
-from paths import DATA_PATH, MODEL_WEIGHTS_PATH, LOG_PATH, TRAINING_RUNS_PATH
+from paths import DATA_PATH, MODEL_WEIGHTS_PATH, LOG_PATH, MODEL_REGISTRY_ENTRY_PATHS
 from logging import getLogger
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -172,21 +172,14 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 progress.set_status("training", JobStatusEnum.FAILED, f"Training failed! Error: {e}")
             raise e
         finally:
-            model_registry_entry.model_dump_json()
+            entry_path = os.path.join(MODEL_REGISTRY_ENTRY_PATHS, f"{model_registry_key}.json")
+            model_registry_entry.save(entry_path)
 
     background_tasks.add_task(background_train_job)
     return {"success": True,
             "model_id": model_registry_key,
             "status": "In progress",
             "message": "Training started in the background."}
-
-
-@router.get("/get_job_status/{model_id}")
-async def get_job_status(model_id: str):
-    status = read_job_status(model_id)
-    if status is None:
-        return {"success": True, "message": "No job", "status": "No job"}
-    return status
 
 
 @router.get("/cancel_job/{job_id}")
@@ -196,7 +189,6 @@ async def cancel_job(job_id: int):
                    "unexpected behaviour.")
     log_dir = os.path.join(LOG_PATH, str(job_id))
     shutil.rmtree(log_dir, ignore_errors=True)
-    #delete_model(job_id)
     return {"success": True,
             "message": f"Training of model {job_id} should be cancelled. This might take a while. "
                        f"Please check again in a few seconds."}

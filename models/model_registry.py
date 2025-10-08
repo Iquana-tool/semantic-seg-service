@@ -11,6 +11,10 @@ class ModelRegistryEntry(BaseModel):
     loader: ModelLoader = Field(ModelLoader, alias="loader", description="Model loader class holds functionality about "
                                                                          "loading a model.")
 
+    def save(self, path):
+        with open(path, "w") as f:
+            f.write(self.model.json())
+
 
 class ModelRegistry(BaseModel):
     """ Model Registry class to combine all available models."""
