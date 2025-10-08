@@ -10,20 +10,20 @@ class DataProfile(BaseModel):
     important, because otherwise we might switch previous training data into the test or validation set and then return
     misleading model performances.
     """
-    classes_dict: dict[int, str] = Field(default_factory=dict, description="Dictionary mapping class ID to its name.")
+    classes_dict: dict[int, str] = Field(default={}, description="Dictionary mapping class ID to its name.")
     image_size: tuple[int, int] = Field(default=(512, 512), description="Images will be resized to this size before use.")
     #preprocessing: Preprocessing = Field(default_factory=Preprocessing, description="Preprocessing used for training.")
 
     train_ratio: float = Field(default=0.8, description="Ratio of training samples in the dataset.")
     val_ratio: float = Field(default=0.1, description="Ratio of validation samples in the dataset.")
     test_ratio: float = Field(default=0.1, description="Ratio of test samples in the dataset.")
-    train_files: list[str] = Field(default_factory=list,
+    train_files: list[str] = Field(default=[],
                                    description="List of indices of training samples in the dataset. This can be left "
                                                "empty for the backend to figure out.")
-    val_files: list[str] = Field(default_factory=list,
+    val_files: list[str] = Field(default=[],
                                  description="List of indices of validation samples in the dataset. This can be left "
                                                "empty for the backend to figure out.")
-    test_files: list[str] = Field(default_factory=list,
+    test_files: list[str] = Field(default=[],
                                   description="List of indices of test samples in the dataset. This can be left "
                                                "empty for the backend to figure out.")
 
