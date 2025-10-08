@@ -62,13 +62,8 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
     dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
     model_save_path = os.path.join(MODEL_WEIGHTS_PATH, f"{model_registry_key}.pt")
 
-    if os.path.exists(log_dir):
-        # Restarting training removes the entire log dir
-        logger.warning(f"MODEL {model_registry_key}:: Log directory already exists: {log_dir}. Overwriting logs.")
-        shutil.rmtree(log_dir)
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(MODEL_WEIGHTS_PATH, exist_ok=True)
-    os.makedirs(TRAINING_RUNS_PATH, exist_ok=True)
 
     training_run.set_status("training", JobStatusEnum.STARTING, "Training is starting...")
 
@@ -180,27 +175,6 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
             "model_id": model_registry_key,
             "status": "In progress",
             "message": "Training started in the background."}
-
-
-@router.get("/cancel_job/{job_id}")
-async def cancel_job(job_id: int):
-    logger.warning("THIS IS A WORKAROUND FOR CANCELLING JOBS!\nIt works by deleting the log directory which leads to an"
-                   " error with tensorboard, which in turn stops the background task. Using this might lead to "
-                   "unexpected behaviour.")
-    log_dir = os.path.join(LOG_PATH, str(job_id))
-    shutil.rmtree(log_dir, ignore_errors=True)
-    return {"success": True,
-            "message": f"Training of model {job_id} should be cancelled. This might take a while. "
-                       f"Please check again in a few seconds."}
-
-
-@router.get("/download_model/{model_id}")
-async def download_model(model_id: str):
-    status = read_job_status(model_id)
-    if status is None or status['status'] != 'completed':
-        return {"error": "Model not available for download"}
-    from fastapi.responses import FileResponse
-    return FileResponse(status['result'], filename=f"{model_id}.pt")
 
 
 def run_one_epoch(model, loader, optimizer, criterion, device, writer: SummaryWriter, epoch, train=True):
