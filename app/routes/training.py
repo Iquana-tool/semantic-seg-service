@@ -1,23 +1,18 @@
 import os
-import shutil
-import json
+from logging import getLogger
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks
-from app.schemas.training_request import TrainingRequest
-from models.model_loader import PathModelLoader
-from models.model_registry import ModelRegistryEntry
-from training.dataloader import get_dataloader
-from app.state import MODEL_REGISTRY
-from paths import DATA_PATH, MODEL_WEIGHTS_PATH, LOG_PATH, MODEL_REGISTRY_ENTRY_PATHS
-from logging import getLogger
 import torch
+from fastapi import APIRouter, BackgroundTasks
 from torch.utils.tensorboard import SummaryWriter
+
+from app.schemas.training_request import TrainingRequest
+from app.schemas.training_run import JobStatusEnum, TrainingRun, TrainingProgress
+from app.state import MODEL_REGISTRY
+from models.model_loader import PathModelLoader
+from paths import DATA_PATH, MODEL_WEIGHTS_PATH, LOG_PATH, MODEL_REGISTRY_ENTRY_PATHS
+from training.dataloader import get_dataloader
 from training.metrics import dice_coeff, iou_score
-from training.early_stopping import EarlyStopping
-from models import load_model_from_checkpoint_path
-from app.schemas.training_run import JobStatusEnum, TrainingRun, TrainingProgress, RunIdentity
-from app.schemas.data_profile import DataProfile
 
 router = APIRouter(prefix="/training", tags=["training"])
 logger = getLogger(__name__)
