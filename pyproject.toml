@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "celery>=5.5.3",
+    "celery-types==0.23.0",
     "dotenv~=0.9.9",
     "fastapi~=0.115.14",
     "numpy~=2.2.6",
