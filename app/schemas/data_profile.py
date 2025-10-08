@@ -26,6 +26,11 @@ class DataProfile(BaseModel):
     test_files: list[str] = Field(default_factory=list, description="List of indices of test samples in the dataset.")
 
     def is_compatible(self, other):
+        """
+        Check whether this DataProfile is compatible with another. Compatibility means, that a model that was
+        previously trained on the other DataProfile is now being trained on this one. However, we have to make sure that
+        some conditions are fulfilled like that both have the same classes and the same image size.
+        """
         return (
             self.num_classes == other.num_classes
             and
