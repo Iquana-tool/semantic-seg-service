@@ -1,6 +1,8 @@
 import os.path
 from logging import getLogger
 from fastapi import APIRouter, UploadFile, File, Form
+
+from app.schemas.data_profile import DataProfile
 from paths import DATA_PATH
 import cv2 as cv
 import numpy as np
@@ -53,23 +55,3 @@ async def upload_file(
         return {"success": True, "message": f"Tensor saved to {tensor_path}"}
     except Exception as e:
         raise e
-
-
-
-@router.post("/upload_dataset")
-async def upload_dataset(dataset_id: int, images: list[UploadFile] = File(...), masks: list[UploadFile] = File(...)):
-    """Upload multiple image and mask files to a dataset and save them as PyTorch tensors."""
-    img_dict = {file.filename.rsplit(".", 1)[0]: file for file in images}
-    mask_dict = {file.filename.rsplit(".", 1)[0]: file for file in masks}
-    uploaded_files = 0
-    for i, (name, img) in enumerate(img_dict.items()):
-        if name not in mask_dict:
-            logger.warning(f"Could not find mask for image {name}. Skipping.")
-            continue
-        await upload_file(dataset_id, True, img, str(i))
-        await upload_file(dataset_id, False, mask_dict[name], str(i))
-        uploaded_files += 1
-    return {
-        "success": True,
-        "message": f"Uploaded {uploaded_files} images and masks to dataset {dataset_id}."
-    }

@@ -1,23 +1,32 @@
 from typing import Union, Literal, List
 
+from pydantic import BaseModel, Field
+
 from models.model_loader import ModelLoader
 from models.model_info import ModelInfo
 
 
-class ModelRegistryEntry:
-    def __init__(self, info: ModelInfo, loader: ModelLoader):
-        self.info = info
-        self.loader = loader
+class ModelRegistryEntry(BaseModel):
+    info: ModelInfo = Field(ModelInfo, alias="info", description="Model info holds all necessary info about the model.")
+    loader: ModelLoader = Field(ModelLoader, alias="loader", description="Model loader class holds functionality about "
+                                                                         "loading a model.")
 
 
-class ModelRegistry:
+class ModelRegistry(BaseModel):
     """ Model Registry class to combine all available models."""
-    def __init__(self):
-        self.models: dict[str, ModelRegistryEntry] = {}
+    models: dict[str, ModelRegistryEntry] = Field(..., description="Dictionary mapping from registry keys to model entries.")
 
     def register(self, name, entry: ModelRegistryEntry):
         """ Register a new model in the registry by passing an instance of a ModelRegistryEntry class."""
         self.models[name] = entry
+
+    def register_new_model_from_base_model(self, base_model_key):
+        new_key = self.get_available_new_key_for_base_model(base_model_key)
+        base_entry_copy = self.models[base_model_key].model_copy()
+        base_entry_copy.info.identifier_str = new_key
+        base_entry_copy.info.type = "trained"
+        self.register(new_key, base_entry_copy)
+        return self.models[new_key]
 
     def list_models(
             self,

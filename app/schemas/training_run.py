@@ -100,10 +100,13 @@ class Metrics(BaseModel):
     def __getattr__(self, item):
         return self.metrics[item]
 
+    def __len__(self):
+        return len(list(self.metrics.values())[0])
+
 
 class TrainingProgress(BaseModel):
     total_epochs: int = Field(..., description="Total number of epochs.")
-    current_epoch: int = Field(default=-1, description="Current epoch.")
+    current_epoch: int = Field(default=1, description="Current epoch.")
     best_epoch: int = Field(default=-1, description="Best epoch.")
     monitor_type: Literal["train", "val"] = Field(default="val", description="Whether to monitor train or validation "
                                                                              "values for figuring out best epoch.")
@@ -113,6 +116,7 @@ class TrainingProgress(BaseModel):
     monitor_best_metric: float = Field(default=None, description="Value of the best epoch metric.")
     train_metrics: Metrics = Field(default_factory=Metrics, description="List of training metrics. Tracks metrics over epochs.")
     val_metrics: Metrics = Field(default_factory=Metrics, description="List of validation metrics. Tracks metrics over epochs.")
+    test_metrics: Metrics = Field(default_factory=Metrics, description="List of testing metrics. Tracks metrics over epochs.")
 
     def training_step(self, train_metrics, val_metrics=None) -> bool:
         """ Update training step information. Returns true if the new epoch was better than the best epoch yet,
@@ -126,6 +130,13 @@ class TrainingProgress(BaseModel):
                 raise ValueError("Best epoch determination needs val metrics, but none were given.")
 
         return self.check_if_better_epoch(val_metrics[self.monitor_metric] if self.monitor_type == "val" else train_metrics[self.monitor_metric])
+
+    def add_test_metrics(self, test_metrics):
+        difference = len(self.train_metrics) - len(self.test_metrics)
+        for _ in range(difference):
+            empty_metrics = {k: None for k in test_metrics.keys()}
+            self.test_metrics.add_metrics(empty_metrics)
+        self.test_metrics.add_metrics(test_metrics)
 
     def check_if_better_epoch(self, new_metric_value):
         # Check the condition for updating the best epoch, aka is it greater or smaller than the best seen value
@@ -147,7 +158,7 @@ def update(func):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         result = func(self, *args, **kwargs)  # Call the original method
-        self.run_identity.updated_at = datetime.now()  # Update timestamp
+        self.updated_at = datetime.now()  # Update timestamp
         return result
     return wrapper
 
@@ -158,8 +169,9 @@ class TrainingRun(BaseModel):
     training status, such as whether the model is currently being trained or not or inference status.
     It allows easy saving and loading of the model information to/from a file.
     """
-    run_identity: RunIdentity = Field(...,
-                                      description="Class object to identify the run.")
+    dataset_identifier: int = Field(..., description="Unique string identifying the dataset.")
+    created_at: datetime = Field(default=datetime.now(), description="Date and time the job was created.")
+    updated_at: datetime = Field(default=datetime.now(), description="Date and time the job was updated.")
     model_status: ModelStatus = Field(default_factory=ModelStatus,
                                       description="Class object to track the status of the model.")
     hyperparams: HyperParams = Field(default_factory=HyperParams,
