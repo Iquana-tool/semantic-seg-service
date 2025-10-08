@@ -2,7 +2,7 @@ import os
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Tuple
 from models import MODEL_REGISTRY
-from paths import MODEL_PATH
+from paths import MODEL_WEIGHTS_PATH
 
 
 class B64SegmentationRequest(BaseModel):
@@ -13,7 +13,7 @@ class B64SegmentationRequest(BaseModel):
 
     @field_validator('model_id')
     def validate_model(cls, value: str) -> str:
-        model_weight_files = os.listdir(MODEL_PATH)
+        model_weight_files = os.listdir(MODEL_WEIGHTS_PATH)
         model_ids = [int((file.split('.')[0]).split("_")[-1]) for file in model_weight_files]
         if value not in model_ids:
             raise ValueError(f"Model ID {value} is not a trained model. You can get all trained models by calling "

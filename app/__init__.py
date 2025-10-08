@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from logging import getLogger
 from app.routes import data, training, models, segment, router
-from paths import DATA_PATH, MODEL_PATH, LOG_PATH, TRAINING_RUNS_PATH
+from paths import DATA_PATH, MODEL_WEIGHTS_PATH, LOG_PATH, TRAINING_RUNS_PATH
 from models.register_models import register_base_models, discover_trained_models
 from app.state import MODEL_REGISTRY
 
@@ -47,7 +47,7 @@ def create_app():
     app.include_router(segment.router)
 
     os.makedirs(DATA_PATH, exist_ok=True)
-    os.makedirs(MODEL_PATH, exist_ok=True)
+    os.makedirs(MODEL_WEIGHTS_PATH, exist_ok=True)
     os.makedirs(LOG_PATH, exist_ok=True)
     os.makedirs(TRAINING_RUNS_PATH, exist_ok=True)
 

@@ -40,7 +40,7 @@ RUN apt-get update --allow-unauthenticated && \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy everything but data, logs, saved_models and training_runs
+# Copy everything but data, logs, model_weights and training_runs
 COPY . .
 
 # Expose the port the app runs on

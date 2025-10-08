@@ -2,7 +2,7 @@ import os
 
 import torch
 
-from paths import MODEL_PATH
+from paths import MODEL_WEIGHTS_PATH
 from models.model_registry import ModelRegistry, ModelRegistryEntry
 from models.model_loader import ModelLoader
 from models.model_info import ModelInfo
@@ -66,7 +66,7 @@ def register_base_models(model_registry: ModelRegistry):
 
 def discover_trained_models(model_registry: ModelRegistry):
     """ Scans the saved models folder and tries to associate a base model with it. """
-    saved_weights = os.listdir(MODEL_PATH)
+    saved_weights = os.listdir(MODEL_WEIGHTS_PATH)
     for weight_name in saved_weights:
         full_identifier, ext = weight_name.split(".")
         base_identifier, number = full_identifier.split("_")
@@ -80,7 +80,7 @@ def discover_trained_models(model_registry: ModelRegistry):
                 # Load the base model
                 base_model = base_entry.loader.loader_function(**base_entry.loader.kwargs)
                 # Load the state dict
-                base_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, weight_name)))
+                base_model.load_state_dict(torch.load(os.path.join(MODEL_WEIGHTS_PATH, weight_name)))
                 return base_model
 
             model_registry.register(full_identifier,

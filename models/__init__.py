@@ -4,7 +4,7 @@ import os
 import segmentation_models_pytorch as smp
 import torch
 from logging import getLogger
-from paths import MODEL_PATH
+from paths import MODEL_WEIGHTS_PATH
 
 logger = getLogger(__name__)
 
@@ -99,13 +99,13 @@ def load_model_from_id(model_id: int, device: str = 'cpu', eval_mode=True) -> to
         tuple: (model, checkpoint) where model is the loaded model and checkpoint is the state dictionary for further
         use.
     """
-    weight_files = [f for f in os.listdir(MODEL_PATH) if f.endswith(".pt") and f.split("_")[-1].split(".")[0] == str(model_id)]
+    weight_files = [f for f in os.listdir(MODEL_WEIGHTS_PATH) if f.endswith(".pt") and f.split("_")[-1].split(".")[0] == str(model_id)]
     if not weight_files:
         raise FileNotFoundError(f"No trained model found with ID {model_id}.")
     if len(weight_files) > 1:
         logger.warning(f"Multiple weight files found for model ID {model_id}. "
                        f"Using the first one: {weight_files[0]}")
-    weight_file = os.path.join(MODEL_PATH, weight_files[0])
+    weight_file = os.path.join(MODEL_WEIGHTS_PATH, weight_files[0])
     logger.info(f"Loading {weight_file} model with ID: {model_id}")
     return load_model_from_checkpoint_path(weight_file, device=device, eval_mode=eval_mode)
 
@@ -120,14 +120,14 @@ def load_metadata_from_id(model_id: int) -> dict:
     Returns:
         dict: Metadata dictionary containing model identifier and other details.
     """
-    meta_files = [f for f in os.listdir(MODEL_PATH) if f.endswith(".json") and
-                    f.split("_")[-1].split(".")[0] == str(model_id)]
+    meta_files = [f for f in os.listdir(MODEL_WEIGHTS_PATH) if f.endswith(".json") and
+                  f.split("_")[-1].split(".")[0] == str(model_id)]
     if not meta_files:
         raise FileNotFoundError(f"No trained model found with ID {model_id}.")
     if len(meta_files) > 1:
         logger.warning(f"Multiple metadata jsons found for model ID {model_id}. "
                        f"Using the first one: {meta_files[0]}")
-    meta_file = os.path.join(MODEL_PATH, meta_files[0])
+    meta_file = os.path.join(MODEL_WEIGHTS_PATH, meta_files[0])
     with open(meta_file, "r") as f:
         metadata = json.load(f)
     return metadata, meta_file
@@ -150,8 +150,8 @@ def parse_weight_file_name(file_name: str):
 
 def get_registry_key_from_id(model_id: int):
     # Get all files with the model id in them. This should be exactly one.
-    result = [parse_weight_file_name(filename) for filename in os.listdir(MODEL_PATH) if filename.endswith(".json") and
-             model_id == parse_weight_file_name(filename)[1]]
+    result = [parse_weight_file_name(filename) for filename in os.listdir(MODEL_WEIGHTS_PATH) if filename.endswith(".json") and
+              model_id == parse_weight_file_name(filename)[1]]
     return result[0]
 
 
@@ -162,10 +162,10 @@ def delete_model(model_id: int):
     Args:
         model_id (int): The ID of the model to delete.
     """
-    weight_files = [f for f in os.listdir(MODEL_PATH) if f.endswith(".pt") and f.split("_")[-1].split(".")[0] == str(model_id)]
-    meta_files = [f for f in os.listdir(MODEL_PATH) if f.endswith(".json") and f.split("_")[-1].split(".")[0] == str(model_id)]
+    weight_files = [f for f in os.listdir(MODEL_WEIGHTS_PATH) if f.endswith(".pt") and f.split("_")[-1].split(".")[0] == str(model_id)]
+    meta_files = [f for f in os.listdir(MODEL_WEIGHTS_PATH) if f.endswith(".json") and f.split("_")[-1].split(".")[0] == str(model_id)]
 
     for file in weight_files + meta_files:
-        os.remove(os.path.join(MODEL_PATH, file))
+        os.remove(os.path.join(MODEL_WEIGHTS_PATH, file))
         logger.info(f"Deleted model file: {file}")
 

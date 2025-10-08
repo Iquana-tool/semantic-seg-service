@@ -8,7 +8,7 @@ from typing import Union
 from absl.logging import LOG_DIR
 from fastapi import APIRouter, UploadFile, File
 from models import MODEL_REGISTRY
-from paths import MODEL_PATH, TRAINING_RUNS_PATH, LOG_PATH
+from paths import MODEL_WEIGHTS_PATH, TRAINING_RUNS_PATH, LOG_PATH
 
 router = APIRouter(prefix="/models", tags=["models"])
 logger = getLogger(__name__)
@@ -33,12 +33,12 @@ async def get_trained_models_of_dataset(dataset_id: int):
     """Retrieve all trained segmentation models."""
     logger.debug("Fetching trained segmentation models.")
     # Get the trained models from the weights directory
-    trained_models = [file for file in os.listdir(MODEL_PATH) if file.endswith(".json")]
+    trained_models = [file for file in os.listdir(MODEL_WEIGHTS_PATH) if file.endswith(".json")]
     trained_models_result = []
     for meta_json_file in trained_models:
         name = meta_json_file.split(".")[0]
         identifier, model_id = name.split("_")
-        meta_entry = json.load(open(os.path.join(MODEL_PATH, meta_json_file)))
+        meta_entry = json.load(open(os.path.join(MODEL_WEIGHTS_PATH, meta_json_file)))
         if meta_entry is None:
             logger.warning(f"Metadata for model {name} is None, skipping.")
             continue
@@ -81,12 +81,12 @@ async def get_model_metadata(model_id: Union[str, int]):
     if type(model_id) is str:
         return {"success": True, "metadata": MODEL_REGISTRY[model_id].copy()}
     logger.debug(f"Fetching metadata for model ID {model_id}.")
-    meta_files = [f for f in os.listdir(MODEL_PATH) if f.endswith(".json") and f.split("_")[-1].split(".")[0] == str(model_id)]
+    meta_files = [f for f in os.listdir(MODEL_WEIGHTS_PATH) if f.endswith(".json") and f.split("_")[-1].split(".")[0] == str(model_id)]
     if not meta_files:
         return {"success": False, "message": f"No trained model found with ID {model_id}."}
     if len(meta_files) > 1:
         logger.warning(f"Multiple metadata jsons found for model ID {model_id}. Using the first one: {meta_files[0]}")
-    meta_file = os.path.join(MODEL_PATH, meta_files[0])
+    meta_file = os.path.join(MODEL_WEIGHTS_PATH, meta_files[0])
     with open(meta_file, "r") as f:
         metadata = json.load(f)
     return {"success": True, "metadata": metadata}
@@ -98,9 +98,9 @@ async def delete_model(model_id: int):
     logger.debug(f"Deleting model with id: {model_id}.")
 
     # Delete the weights and meta data
-    files = [f for f in os.listdir(MODEL_PATH) if f.split("_")[-1].split(".")[0] == str(model_id)]
+    files = [f for f in os.listdir(MODEL_WEIGHTS_PATH) if f.split("_")[-1].split(".")[0] == str(model_id)]
     for file in files:
-        os.remove(os.path.join(MODEL_PATH, file))
+        os.remove(os.path.join(MODEL_WEIGHTS_PATH, file))
 
     # Delete the logs if they exist. They could not exist if the model was stopped.
     log_dir = os.path.join(LOG_PATH, str(model_id))

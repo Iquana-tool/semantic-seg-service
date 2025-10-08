@@ -9,7 +9,7 @@ from models.model_loader import PathModelLoader
 from models.model_registry import ModelRegistryEntry
 from training.dataloader import get_dataloader
 from app.state import MODEL_REGISTRY
-from paths import DATA_PATH, MODEL_PATH, LOG_PATH, TRAINING_RUNS_PATH
+from paths import DATA_PATH, MODEL_WEIGHTS_PATH, LOG_PATH, TRAINING_RUNS_PATH
 from logging import getLogger
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -21,36 +21,6 @@ from app.schemas.data_profile import DataProfile
 
 router = APIRouter(prefix="/training", tags=["training"])
 logger = getLogger(__name__)
-
-
-def save_job_status(job_id, status: str, result: str = "", extra: dict = None):
-    os.makedirs(TRAINING_RUNS_PATH, exist_ok=True)
-    obj = {"status": status, "result": result}
-    if extra:
-        obj.update(extra)
-    with open(os.path.join(TRAINING_RUNS_PATH, f"{job_id}.json"), "w") as f:
-        json.dump(obj, f)
-
-
-def read_job_status(job_id):
-    try:
-        with open(os.path.join(TRAINING_RUNS_PATH, f"{job_id}.json"), "r") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
-def get_training_run(model_registry_entry: ModelRegistryEntry,
-                     req: TrainingRequest) -> TrainingRun:
-    """ Gets or creates a TrainingRun object based on the given ModelRegistryEntry."""
-    if model_registry_entry.info.is_base_model():
-        model_registry_key = MODEL_REGISTRY.register_new_model_from_base_model(req.model_registry_key)
-
-    else:
-        # Model was trained before. We already have a training run object.
-        training_run: TrainingRun = model_registry_entry.info.training_run
-
-    return training_run
 
 
 @router.post("/start_training")
@@ -90,14 +60,14 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
 
     log_dir = os.path.join(LOG_PATH, str(model_registry_key))
     dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
-    model_save_path = os.path.join(MODEL_PATH, f"{model_registry_key}.pt")
+    model_save_path = os.path.join(MODEL_WEIGHTS_PATH, f"{model_registry_key}.pt")
 
     if os.path.exists(log_dir):
         # Restarting training removes the entire log dir
         logger.warning(f"MODEL {model_registry_key}:: Log directory already exists: {log_dir}. Overwriting logs.")
         shutil.rmtree(log_dir)
     os.makedirs(log_dir, exist_ok=True)
-    os.makedirs(MODEL_PATH, exist_ok=True)
+    os.makedirs(MODEL_WEIGHTS_PATH, exist_ok=True)
     os.makedirs(TRAINING_RUNS_PATH, exist_ok=True)
 
     training_run.set_status("training", JobStatusEnum.STARTING, "Training is starting...")
@@ -201,6 +171,8 @@ async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks
                 # If there is another error, then the task failed
                 progress.set_status("training", JobStatusEnum.FAILED, f"Training failed! Error: {e}")
             raise e
+        finally:
+            model_registry_entry.model_dump_json()
 
     background_tasks.add_task(background_train_job)
     return {"success": True,
