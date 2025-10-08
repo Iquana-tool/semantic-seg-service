@@ -1,5 +1,7 @@
 import os.path
 from logging import getLogger
+
+from typing import Literal
 from fastapi import APIRouter, UploadFile, File, Form
 
 from app.schemas.data_profile import DataProfile
@@ -15,14 +17,15 @@ logger = getLogger(__name__)
 @router.post("/upload_file_to_dataset")
 async def upload_file(
     dataset_id: int = Form(...),
-    is_image: bool = Form(...),
+    type: Literal["images", "masks", "for_inference"] = Form(...),
     filename: str = Form(None),
     file: UploadFile = File(...)
 ):
     """Upload a single image file to a dataset and save it as a PyTorch tensor."""
     try:
+        is_image = type != "masks"
         # Compute target .pt path
-        target_dir = os.path.join(DATA_PATH, str(dataset_id), "images" if is_image else "masks")
+        target_dir = os.path.join(DATA_PATH, str(dataset_id), type)
         os.makedirs(target_dir, exist_ok=True)
 
         base_filename = os.path.splitext(file.filename)[0] if not filename else filename
