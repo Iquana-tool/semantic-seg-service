@@ -3,12 +3,15 @@ from enum import Enum
 from functools import wraps
 from typing import Literal
 from collections import defaultdict
-
+from logging import getLogger
 from pydantic import BaseModel, Field
 
 from app.schemas.data_profile import DataProfile
 from app.schemas.training_request import HyperParams
 from app.schemas.augmentations import Augmentations
+
+
+logger = getLogger(__name__)
 
 
 class JobStatusEnum(Enum):
