@@ -9,7 +9,7 @@ class HyperParams(BaseModel):
     batch_size: int = Field(default=32, description="Batch size to use for training.")
     learning_rate: float = Field(default=0.001, description="Learning rate to use for training.")
     lr_scheduler: Optional[str] = Field(
-        default=None,
+        default="plateau",
         description="Learning rate scheduler to use for training. Options: 'step', 'exp', 'plateau', 'cosine'."
     )
     lr_scheduler_step_size: int = Field(
