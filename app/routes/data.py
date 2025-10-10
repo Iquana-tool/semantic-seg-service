@@ -17,7 +17,7 @@ logger = getLogger(__name__)
 @router.post("/upload_file_to_dataset")
 async def upload_file(
     dataset_id: int = Form(...),
-    type: Literal["images", "masks", "for_inference"] = Form(...),
+    type: Literal["images", "masks"] = Form(...),
     filename: str = Form(None),
     file: UploadFile = File(...)
 ):
