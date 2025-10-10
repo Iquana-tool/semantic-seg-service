@@ -9,6 +9,7 @@ from training.dataloader import get_dataloader
 from training.metrics import dice_coeff, iou_score
 from app.schemas.training_run import JobStatusEnum
 from app.schemas.training_request import TrainingRequest
+from celery.exceptions import TaskRevokedError
 
 
 def train_model(task, req_dict, model_registry_key):
@@ -106,7 +107,12 @@ def train_model(task, req_dict, model_registry_key):
                 break
         progress.set_status("training", JobStatusEnum.FINISHED, f"Successfully trained {model_registry_key}")
         task.update_state(state='SUCCESS', meta={'status': 'Training completed'})
+    except TaskRevokedError:
+        # Handle task revoked separately
+        progress.set_status("training", JobStatusEnum.STOPPED, "Training stopped.")
+        task.update_state(state='STOPPED', meta={'status': f'Training stopped.'})
     except Exception as e:
+        # Raise every other error
         progress.set_status("training", JobStatusEnum.FAILED, f"Training failed! Error: {e}")
         task.update_state(state='FAILURE', meta={'status': f'Training failed: {str(e)}'})
         raise e
