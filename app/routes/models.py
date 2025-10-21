@@ -15,13 +15,13 @@ logger = getLogger(__name__)
 
 
 @router.get("/get_models/type={type}&available={available}&dataset_id={dataset_id}")
-async def get_models(type: Literal["base", "trained"], available: bool, dataset_id: int):
+async def get_models(type: Literal["base", "trained", "all"], available: bool, dataset_id: int):
     """Retrieve all available segmentation models."""
     logger.debug("Fetching available segmentation models.")
     # Get the models from the registry, excluding the 'getter' key
     return {
         "success": True,
-        "models": MODEL_REGISTRY.list_models(filter_type=type,
+        "models": MODEL_REGISTRY.list_models(filter_type=type if type != "all" else None,
                                              filter_availablity=available,
                                              filter_dataset=dataset_id,
                                              return_as_json=True)
