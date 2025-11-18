@@ -44,7 +44,7 @@ def create_app():
     app.include_router(data.router)
     app.include_router(training.router)
     app.include_router(models.router)
-    app.include_router(segment.router)
+    app.include_router(inference.router)
 
     os.makedirs(DATA_PATH, exist_ok=True)
     os.makedirs(MODEL_WEIGHTS_PATH, exist_ok=True)

@@ -16,7 +16,7 @@ class ModelInfo(BaseModel):
                                                                  "already trained.")
     description: str = Field(..., description="Free text model description.")
     tags: list[str] = Field(default_factory=list, description="List of tags associated with this model.")
-    training_run: Optional[TrainingRun] = Field(None, description="A training run object associated with this model. "
+    training_run: Optional[TrainingRun] = Field(default=None, description="A training run object associated with this model. "
                                                                   "None for base models.")
 
     def is_base_model(self) -> bool:
