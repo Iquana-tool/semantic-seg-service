@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from logging import getLogger
-from app.routes import data, training, models, segment, router
+from app.routes import data, training, models, inference, router
 from paths import DATA_PATH, MODEL_WEIGHTS_PATH, LOG_PATH, MODEL_REGISTRY_ENTRY_PATHS
 from models.register_models import register_base_models, discover_trained_models
 from app.state import MODEL_REGISTRY
