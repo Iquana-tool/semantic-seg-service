@@ -5,13 +5,13 @@ from app.main_api.inference import post_mask
 from app.state import MODEL_REGISTRY
 import torch
 from logging import getLogger
-
+from celery import Task
 from app.util.image_conversions import preprocess_image
 
 logger = getLogger(__name__)
 
 
-async def inference(task, file, model_registry_key, mask_id):
+async def inference(file, model_registry_key, mask_id):
     registry_entry = MODEL_REGISTRY.models[model_registry_key]
     device = "cuda" if torch.cuda.is_available() else "cpu"
     try:
@@ -32,6 +32,8 @@ async def inference(task, file, model_registry_key, mask_id):
         raise e
 
     logits = model(processed_img_tensor)  # [N, num_classes, H, W]
-    pred = torch.argmax(logits, dim=1).int()  # [N, H, W]
+    max_tensor = torch.max(logits, 1)[1].item()
+    pred = max_tensor[1].int()  # [N, H, W]
+    confidence = torch.mean(max_tensor[0])
     masks_np = pred.cpu().numpy()  # shape: (N, H, W)
-    await post_mask(masks_np, mask_id)
+    return masks_np, confidence
