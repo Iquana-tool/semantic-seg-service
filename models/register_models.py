@@ -4,7 +4,7 @@ import torch
 
 from paths import MODEL_WEIGHTS_PATH
 from models.model_registry import ModelRegistry, ModelRegistryEntry
-from models.model_loader import ModelLoader
+from models.model_loader import BaseModelLoader as ModelLoader
 from models.model_info import ModelInfo
 import segmentation_models_pytorch as smp
 
@@ -21,6 +21,7 @@ def register_base_models(model_registry: ModelRegistry):
                                 ),
                                 loader=ModelLoader(
                                     loader_function=smp.Unet,
+                                    kwargs=dict()
                                 ),
                             ))
     model_registry.register("unet++",
@@ -34,6 +35,7 @@ def register_base_models(model_registry: ModelRegistry):
                                 ),
                                 loader=ModelLoader(
                                     loader_function=smp.UnetPlusPlus,
+                                    kwargs=dict()
                                 ),
                             ))
     model_registry.register("deeplabv3",
@@ -47,6 +49,7 @@ def register_base_models(model_registry: ModelRegistry):
                                 ),
                                 loader=ModelLoader(
                                     loader_function=smp.DeepLabV3,
+                                    kwargs=dict()
                                 ),
                             ))
     model_registry.register("deeplabv3+",
@@ -60,6 +63,7 @@ def register_base_models(model_registry: ModelRegistry):
                                 ),
                                 loader=ModelLoader(
                                     loader_function=smp.DeepLabV3Plus,
+                                    kwargs=dict()
                                 ),
                             ))
 
