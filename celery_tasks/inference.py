@@ -1,4 +1,4 @@
-from inference.inference import inference
+from inference.core import inference
 from celery import shared_task
 
 

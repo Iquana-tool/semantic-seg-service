@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas.training_request import TrainingRequest
-from celery_tasks.training import train_model
+from celery_tasks.training import train_model_task
 from app.state import MODEL_REGISTRY
 from app.schemas.training_run import TrainingRun, TrainingProgress, JobStatusEnum
 from celery_app import celery
@@ -32,7 +32,7 @@ async def start_training(req: TrainingRequest):
     # Update the training status
     training_run.set_status("training", JobStatusEnum.QUEUED, "Training is queued.")
 
-    task: AsyncResult = train_model.delay(req.model_dump(), req.model_registry_key)
+    task: AsyncResult = train_model_task.delay(req.model_dump(), req.model_registry_key)
     training_run.task_id = task.id
 
     return {

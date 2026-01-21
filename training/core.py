@@ -12,7 +12,7 @@ from app.schemas.training_request import TrainingRequest
 from celery.exceptions import TaskRevokedError
 
 
-def train_model(task, req_dict, model_registry_key):
+def train_model_logic(task, req_dict, model_registry_key):
     # Get the training request
     req = TrainingRequest.model_validate(req_dict)
 

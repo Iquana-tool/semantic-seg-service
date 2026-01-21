@@ -1,14 +1,13 @@
 import os.path
 from logging import getLogger
-
 from typing import Literal
-from fastapi import APIRouter, UploadFile, File, Form
 
-from app.schemas.data_profile import DataProfile
-from paths import DATA_PATH
 import cv2 as cv
 import numpy as np
 import torch
+from fastapi import APIRouter, UploadFile, File, Form
+
+from paths import DATA_PATH
 
 router = APIRouter(prefix="/data", tags=["data"])
 logger = getLogger(__name__)
@@ -21,7 +20,17 @@ async def upload_file(
     filename: str = Form(None),
     file: UploadFile = File(...)
 ):
-    """Upload a single image file to a dataset and save it as a PyTorch tensor."""
+    """
+        Upload a single image file to a dataset and save it as a PyTorch tensor.
+        This progressively builds the dataset aka after a file is marked as fully annotated it is uploaded here.
+        Uploading multiple files at once is barely needed.
+        :params dataset_id: The id of the dataset. This names the local files.
+        :params type: The type of the file. It can be either "images", "masks". This defines the type of the uploaded
+            file.
+        :params filename: The filename of the uploaded file. This is needed to match image and mask pairs, ie. they
+            need to have the same name, else they cant be matched.
+        :params file: The file to be uploaded.
+    """
     try:
         is_image = type != "masks"
         # Compute target .pt path

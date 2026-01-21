@@ -1,11 +1,10 @@
+from logging import getLogger
+
 import cv2
 import numpy as np
-
-from app.main_api.inference import post_mask
-from app.state import MODEL_REGISTRY
 import torch
-from logging import getLogger
-from celery import Task
+
+from app.state import MODEL_REGISTRY
 from app.util.image_conversions import preprocess_image
 
 logger = getLogger(__name__)

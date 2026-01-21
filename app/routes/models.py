@@ -1,14 +1,9 @@
-import json
-import os
-import shutil
-from collections import defaultdict
 from logging import getLogger
-from typing import Union, Literal
+from typing import Literal
 
-from absl.logging import LOG_DIR
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter
+
 from app.state import MODEL_REGISTRY
-from paths import MODEL_WEIGHTS_PATH, LOG_PATH
 
 router = APIRouter(prefix="/models", tags=["models"])
 logger = getLogger(__name__)

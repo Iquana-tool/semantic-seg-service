@@ -3,7 +3,7 @@ from logging import getLogger
 
 from fastapi import UploadFile, File, APIRouter, Response
 
-from inference.inference import inference
+from inference.core import inference
 
 router = APIRouter(prefix="/inference", tags=["inference"])
 logger = getLogger(__name__)
