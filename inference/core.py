@@ -3,18 +3,20 @@ from logging import getLogger
 import cv2
 import numpy as np
 import torch
-
+from torchvision.io import read_image
+from torchvision.transforms import Resize
 from app.state import MODEL_REGISTRY
 from app.util.image_conversions import preprocess_image
 
 logger = getLogger(__name__)
 
 
-async def inference(file, model_registry_key, mask_id):
-    registry_entry = MODEL_REGISTRY.models[model_registry_key]
+async def inference_logic(image_url, model_registry_key):
+    model_info = MODEL_REGISTRY.get_model_info(model_registry_key)
+    model_loader = MODEL_REGISTRY.get_model_loader(model_info)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     try:
-        model = registry_entry.loader.load_model()
+        model = model_loader.load_model()
         model.to(device)
         model.eval()
     except Exception as e:
@@ -23,14 +25,13 @@ async def inference(file, model_registry_key, mask_id):
 
     # Read and preprocess all images into a batch
     try:
-        img_bytes = await file.read()
-        img_arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
-        processed_img_tensor = preprocess_image(img_arr, registry_entry.info.training_run.data_profile)
+        img_tensor = read_image(image_url).float() / 255.0
+        img_tensor = Resize(size=model_info.training_req.image_size).forward(img_tensor)
+        img_tensor = img_tensor.to(device)
     except Exception as e:
-        logger.error(f"Error reading {file.filename}: {e}")
+        logger.error(f"Error reading {image_url}: {e}")
         raise e
-
-    logits = model(processed_img_tensor)  # [N, num_classes, H, W]
+    logits = model(img_tensor)  # [N, num_classes, H, W]
     max_tensor = torch.max(logits, 1)[1].item()
     pred = max_tensor[1].int()  # [N, H, W]
     confidence = torch.mean(max_tensor[0])

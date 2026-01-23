@@ -1,15 +1,10 @@
+from collections import defaultdict
 from datetime import datetime
 from enum import Enum
-from functools import wraps
-from typing import Literal
-from collections import defaultdict
 from logging import getLogger
+from typing import Literal
+
 from pydantic import BaseModel, Field
-
-from app.schemas.data_profile import DataProfile
-from app.schemas.hyperparams import HyperParams
-from app.schemas.augmentations import Augmentations
-
 
 logger = getLogger(__name__)
 
@@ -155,72 +150,3 @@ class TrainingProgress(BaseModel):
             return True
         else:
             return False
-
-
-def update(func):
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        result = func(self, *args, **kwargs)  # Call the original method
-        self.updated_at = datetime.now()  # Update timestamp
-        return result
-    return wrapper
-
-
-class TrainingRun(BaseModel):
-    """
-    This class keeps track of a training run, such as the registry key and model ID. But also about the
-    training status, such as whether the model is currently being trained or not or inference status.
-    It allows easy saving and loading of the model information to/from a file.
-    """
-    task_id: str | None = Field(None, description="Task ID given by celery. If none, has no task associated with it.")
-    dataset_identifier: int = Field(..., description="Unique string identifying the dataset.")
-    created_at: datetime = Field(default=datetime.now(), description="Date and time the job was created.")
-    updated_at: datetime = Field(default=datetime.now(), description="Date and time the job was updated.")
-    model_status: ModelStatus = Field(default_factory=ModelStatus,
-                                      description="Class object to track the status of the model.")
-    hyperparams: HyperParams = Field(default_factory=HyperParams,
-                                     description="Class object to track hyperparameters.")
-    augmentations: Augmentations = Field(default_factory=Augmentations,
-                                         description="Class object to track augmentations.")
-    data_profile: DataProfile = Field(...,
-                                      description="Class object to track training progress.")
-    progress: TrainingProgress = Field(...,
-                                       description="Class object to track progress.")
-
-    def set_status(self, type: Literal["training", "inference"], status, msg: str | None = None):
-        """ Set the training status of the model. """
-        self.status.set_type(type)
-        self.status.set_status(status, datetime.now(), msg)
-
-    def from_json_data(self, json_data):
-        """ Load model information from a JSON object. """
-        for key, value in json_data.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-            else:
-                logger.warning(f"Key '{key}' not found in ModelInfo. Adding anyways.")
-                setattr(self, key, value)
-
-    def save(self, save_path):
-        """ Save the model information to a JSON file. """
-        with open(save_path, 'w') as f:
-            f.write(self.model.json())
-
-    @update
-    def update_total_epochs(self, total_epochs, add_to_current=True):
-        if add_to_current:
-            self.progress.total_epochs = self.progress.current_epoch + total_epochs
-        else:
-            self.progress.total_epochs = total_epochs
-
-    @update
-    def update_hyperparams(self, hyper_params: HyperParams):
-        self.hyperparams = hyper_params
-
-    @update
-    def update_augmentations(self, augmentations: Augmentations):
-        self.augmentations = augmentations
-
-    @update
-    def update_data_profile(self, data_profile):
-        self.data_profile = data_profile

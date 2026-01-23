@@ -9,21 +9,18 @@ router = APIRouter(prefix="/models", tags=["models"])
 logger = getLogger(__name__)
 
 
-@router.get("/get_models/type={type}&available={available}&dataset_id={dataset_id}")
-async def get_models(type: Literal["base", "trained", "all"], available: bool, dataset_id: int):
+@router.get("/{only_return_available}")
+async def get_models(only_return_available: bool = False):
     """Retrieve all available segmentation models."""
     logger.debug("Fetching available segmentation models.")
     # Get the models from the registry, excluding the 'getter' key
     return {
         "success": True,
-        "models": MODEL_REGISTRY.list_models(filter_type=type if type != "all" else None,
-                                             filter_availablity=available,
-                                             filter_dataset=dataset_id,
-                                             return_as_json=True)
+        "models": MODEL_REGISTRY.list_models(only_return_available=only_return_available)
     }
 
 
-@router.get("/get_model_metadata/{model_registry_key}")
+@router.get("/{model_registry_key}")
 async def get_model_metadata(model_registry_key: str):
     """Retrieve metadata for a specific model."""
     if model_registry_key not in MODEL_REGISTRY.models:
@@ -36,7 +33,7 @@ async def get_model_metadata(model_registry_key: str):
     }
 
 
-@router.delete("/delete_model/{model_registry_key}")
+@router.delete("/{model_registry_key}")
 async def delete_model(model_registry_key: str):
     """Deletes a model based on its id."""
     logger.debug(f"Deleting model with id: {model_registry_key}.")

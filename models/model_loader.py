@@ -1,14 +1,10 @@
 import os
 
 import torch
-import torch.nn as nn
-from typing import Any, Union, List
-from collections.abc import Callable
-from pydantic import BaseModel, Field
 
 
-class ModelLoader(BaseModel):
-    def is_available(self) -> bool:
+class ModelLoader:
+    def is_loadable(self) -> bool:
         # Implement logic to check if the model can be loaded with the given kwargs
         pass
 
@@ -17,10 +13,16 @@ class ModelLoader(BaseModel):
 
 class BaseModelLoader(ModelLoader):
     """ Base Model loaders can not be serialized because they have specific functions. """
-    loader_function: Callable
-    kwargs: dict = Field(..., description="Keyword arguments to pass to the loader function")
+    def __init__(self, loader_function, **kwargs):
+        """
+        Class to handle loading of models.
+        :param loader_function: Function that loads the model.
+        :param kwargs: Parameters to be passed to the loader function.
+        """
+        self.loader_function = loader_function
+        self.kwargs = kwargs
 
-    def is_available(self):
+    def is_loadable(self):
         # Implement logic to check if the model can be loaded with the given kwargs
         pass
 
@@ -31,9 +33,17 @@ class BaseModelLoader(ModelLoader):
 
 
 class PathModelLoader(ModelLoader):
-    path_to_model: str = Field(..., description="Path to the model to be loaded. The model must be loadable via 'torch.save'.")
+    def __init__(self, path_to_model, **kwargs):
+        """
+        Class to handle loading of models.
+        :param loader_function: Function that loads the model.
+        :param kwargs: Parameters to be passed to the loader function.
+        """
+        self.loader_function = None
+        self.path_to_model = path_to_model
+        self.kwargs = kwargs
 
-    def is_available(self):
+    def is_loadable(self):
         return os.path.exists(self.path_to_model)
 
     def load_model(self, **kwargs):

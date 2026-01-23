@@ -1,33 +1,88 @@
-from io import BytesIO
+import json
 from logging import getLogger
 
-from fastapi import UploadFile, File, APIRouter, Response
+import numpy as np
+from fastapi import APIRouter, Body
+from pycocotools import mask as maskUtils
+from starlette.responses import StreamingResponse
 
-from inference.core import inference
+from inference.core import inference_logic
 
 router = APIRouter(prefix="/inference", tags=["inference"])
 logger = getLogger(__name__)
 
 
-@router.post("/model={model_registry_key}&mask_id={mask_id}")
-async def infer_image(
+@router.post("/{model_registry_key}")
+async def inference(
     model_registry_key: str,
-    mask_id: int,
-    file: UploadFile = File(...),
+    image_url: str,
 ):
     """ Segment a single image with the specified model."""
-    mask, score = await inference(model_registry_key, mask_id, file)
-    # Convert the mask to raw bytes
-    mask_bytes = mask.tobytes()
+    # 1. Run inference
+    mask, score = await inference_logic(model_registry_key, image_url)
 
-    # Return the raw bytes with metadata in headers
-    return Response(
-        content=mask_bytes,
-        media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": "attachment; filename=mask.bin",
-            "X-Mask-Shape": f"{mask.shape[0]},{mask.shape[1]}",  # e.g., "256,256"
-            "X-Mask-Dtype": str(mask.dtype),  # e.g., "uint8"
-            "X-Score": str(score)  # Optional: Include the score
-        }
-    )
+    # 2. Prepare for RLE
+    # pycocotools requires Fortran-order (column-major) arrays
+    mask_fortran = np.asfortranarray(mask.astype(np.uint8))
+
+    rle_masks = {}
+    unique_labels = np.unique(mask_fortran)
+
+    for label in unique_labels:
+        if label == 0: continue  # Skip background
+
+        # Create a binary mask for just this class
+        binary_mask = (mask_fortran == label).astype(np.uint8)
+
+        # Encode to RLE
+        encoded = maskUtils.encode(binary_mask)
+
+        # Convert bytes to string so it's JSON serializable
+        encoded['counts'] = encoded['counts'].decode('utf-8')
+        rle_masks[int(label)] = encoded
+
+    return {
+        "model": model_registry_key,
+        "mask": rle_masks,
+        "confidence": float(score),  # Ensure float for JSON
+    }
+
+
+@router.post("/{model_registry_key}/stream_multi")
+async def stream_multi_inference(
+        model_registry_key: str,
+        image_urls: list[str] = Body(...),
+):
+    async def generate_results():
+        for url in image_urls:
+            try:
+                # 1. Run inference for one image
+                mask, score = await inference_logic(model_registry_key, url)
+
+                # 2. Process to RLE
+                mask_fortran = np.asfortranarray(mask.astype(np.uint8))
+                rle_masks = {}
+                for label in np.unique(mask_fortran):
+                    if label == 0: continue
+
+                    binary_mask = (mask_fortran == label).astype(np.uint8)
+                    encoded = maskUtils.encode(binary_mask)
+                    encoded['counts'] = encoded['counts'].decode('utf-8')
+                    rle_masks[int(label)] = encoded
+
+                # 3. Create the payload for this specific image
+                yield json.dumps({
+                    "url": url,
+                    "mask": rle_masks,
+                    "confidence": float(score),
+                    "status": "success"
+                }) + "\n"  # Newline delimiter for the stream
+
+            except Exception as e:
+                yield json.dumps({
+                    "url": url,
+                    "error": str(e),
+                    "status": "error"
+                }) + "\n"
+
+    return StreamingResponse(generate_results(), media_type="application/x-ndjson")

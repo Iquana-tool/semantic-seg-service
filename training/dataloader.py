@@ -1,13 +1,13 @@
-import os
-import torch
-from torch.utils.data import Dataset, DataLoader
-import torchvision.transforms.functional as TF
 from logging import getLogger
 from typing import Tuple
-from torch.utils.data import random_split
+
+import torch
+import torchvision.transforms.functional as TF
+from torch.utils.data import DataLoader, random_split
+from torch.utils.data import Dataset
+from torchvision.io import read_image
+
 from app.schemas.augmentations import Augmentations
-from app.schemas.data_profile import DataProfile
-from app.schemas.preprocessing import Preprocessing
 
 logger = getLogger(__name__)
 
@@ -16,7 +16,8 @@ class SegmentationTensorDataset(Dataset):
     """Dataset class."""
     def __init__(
         self,
-        dataset_root: str,
+        image_urls: list[str],
+        mask_urls: list[str],
         augmentations: Augmentations,
         eval: bool = False,
         mean: list[float] = None,
@@ -25,17 +26,17 @@ class SegmentationTensorDataset(Dataset):
     ):
         """
         Args:
-            dataset_root (str): Folder with 'images/' and 'masks/' subdirs
+            image_urls (list[str]): list of image urls.
+            mask_urls (list[str]): list of mask urls.
             augmentations (Augmentations): Apply the specified augmentations
             eval (bool): If True, this dataset is used for validation/ testing and augmentations should not be applied.
             mean (list[float]): Mean values to normalize image to. If None, no normalization is applied.
             std (list[float]): Std values to normalize image to. If None, no normalization is applied.
             image_size (tuple): Final image size (H, W)
         """
-        self.image_dir = os.path.join(dataset_root, "images")
-        self.mask_dir = os.path.join(dataset_root, "masks")
+        self.image_urls = image_urls
+        self.mask_urls = mask_urls
         self.eval = eval
-        self.image_filenames = [f for f in os.listdir(self.image_dir) if f.endswith(".pt")]
 
         self.augmentations = augmentations
         self.mean = mean
@@ -46,12 +47,11 @@ class SegmentationTensorDataset(Dataset):
         return len(self.image_filenames)
 
     def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor]:
-        image_name = self.image_filenames[idx]
-        image_path = os.path.join(self.image_dir, image_name)
-        mask_path = os.path.join(self.mask_dir, image_name)
+        image_url = self.image_urls[idx]
+        mask_url = self.mask_urls[idx]
 
-        image = torch.load(image_path).float()
-        mask = torch.load(mask_path)
+        image = read_image(image_url).float() / 255.0  # Normalize images to 0,1
+        mask = read_image(mask_url).float()  # Masks stay in their classes.
 
         # Ensure image is CHW
         if image.ndim == 2:
@@ -74,24 +74,25 @@ class SegmentationTensorDataset(Dataset):
 
 
 def get_dataloader(
-    dataset_path: str,
-    augmentations: Augmentations,
-    data_profile: DataProfile,
-    batch_size: int = 8,
-    shuffle: bool = True,
-    num_workers: int = 4,
-    min_samples_for_split: int = 10,
-    seed: int = 42
+        image_urls: list[str],
+        mask_urls: list[str],
+        augmentations: Augmentations,
+        image_size: Tuple[int, int] = (256, 256),
+        val_ratio: float = 0.1,
+        batch_size: int = 8,
+        shuffle: bool = True,
+        num_workers: int = 4,
+        min_samples_for_split: int = 10,
+        seed: int = 42
 ) -> tuple:
-    """
-    Returns (train_loader, val_loader, test_loader), or (single_loader, None, None) if not enough data.
-    """
     dataset = SegmentationTensorDataset(
-        dataset_root=dataset_path,
+        image_urls=image_urls,
+        mask_urls=mask_urls,
         augmentations=augmentations,
-        image_size=data_profile.image_size,
+        image_size=image_size,
     )
 
+    # 1. Handle datasets too small to split
     if len(dataset) < min_samples_for_split:
         loader = DataLoader(
             dataset,
@@ -100,59 +101,34 @@ def get_dataloader(
             num_workers=num_workers,
             pin_memory=True,
         )
-        return loader, None, None
+        return loader, None
 
-    # Create the datasets
-    train_set = SegmentationTensorDataset(
-        dataset_root=dataset_path,
-        augmentations=augmentations,
-        image_size=data_profile.image_size,
-    )
-    val_set = SegmentationTensorDataset(
-        dataset_root=dataset_path,
-        augmentations=augmentations,
-        eval=True,
-        image_size=data_profile.image_size,
-    )
-    test_set = SegmentationTensorDataset(
-        dataset_root=dataset_path,
-        augmentations=augmentations,
-        eval=True,
-        image_size=data_profile.image_size,
+    # 2. Calculate lengths for split
+    val_size = int(len(dataset) * val_ratio)
+    train_size = len(dataset) - val_size
+
+    # 3. Perform the split with a generator for reproducibility
+    generator = torch.Generator().manual_seed(seed)
+    train_dataset, val_dataset = random_split(
+        dataset, [train_size, val_size], generator=generator
     )
 
-    # Compute the filenames as sets for easy set subtraction
-    filenames_set = set(dataset.image_filenames)
-    train_filenames_set = set(data_profile.train_files)
-    val_filenames_set = set(data_profile.val_files)
-    test_filenames_set = set(data_profile.test_files)
-    remaining_filenames_set = filenames_set - train_filenames_set - val_filenames_set - test_filenames_set
-
-    # Update the dataset to only include the remaining filenames.
-    dataset.image_filenames = list(remaining_filenames_set)
-    n_val = max(1, int(data_profile.val_ratio * len(dataset)))
-    n_test = max(1, int(data_profile.test_ratio * len(dataset)))
-    n_train = len(dataset) - n_val - n_test
-    # Split the dataset
-    train_set_r, val_set_r, test_set_r = random_split(dataset,
-                                                [n_train, n_val, n_test],
-                                                generator=torch.Generator().manual_seed(seed))
-
-    # Update the data profile with the new names
-    data_profile.train_files += train_set_r.dataset.image_filenames
-    data_profile.val_files += val_set_r.dataset.image_filenames
-    data_profile.test_files += test_set_r.dataset.image_filenames
-    # Update the datasets with the new names
-    train_set.image_filenames = data_profile.train_files
-    val_set.image_filenames = data_profile.val_files
-    test_set.image_filenames = data_profile.test_files
-
-    # Get the dataloaders
+    # 4. Create the dataloaders
     train_loader = DataLoader(
-        train_set, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+
     val_loader = DataLoader(
-        val_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    test_loader = DataLoader(
-        test_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    return train_loader, val_loader, test_loader
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,  # Usually don't shuffle validation
+        num_workers=num_workers,
+        pin_memory=True
+    )
+
+    return train_loader, val_loader
 
