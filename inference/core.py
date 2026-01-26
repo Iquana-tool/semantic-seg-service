@@ -1,17 +1,15 @@
 from logging import getLogger
 
-import cv2
-import numpy as np
 import torch
 from torchvision.io import read_image
 from torchvision.transforms import Resize
+
 from app.state import MODEL_REGISTRY
-from app.util.image_conversions import preprocess_image
 
 logger = getLogger(__name__)
 
 
-async def inference_logic(image_url, model_registry_key):
+async def inference_logic(image, model_registry_key):
     model_info = MODEL_REGISTRY.get_model_info(model_registry_key)
     model_loader = MODEL_REGISTRY.get_model_loader(model_info)
     device = "cuda" if torch.cuda.is_available() else "cpu"
