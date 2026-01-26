@@ -1,20 +1,25 @@
 import os
+from pathlib import Path
 
 import torch
 from celery.exceptions import TaskRevokedError
 
-from app.schemas.training_progress import TrainingProgress
-from models.model_info import ModelInfo
-from paths import TRAINED_MODEL_WEIGHTS_PATH, LOG_PATH
+from schemas.training import TrainingProgress, SemanticTrainingRequest
+from schemas.models import SemanticSegmentationModels
+from torch.optim import Adam
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+from paths import TRAINED_MODEL_WEIGHTS_PATH, LOG_PATH, TRAINED_MODEL_INFO_PATHS
 from training.dataloader import get_dataloader
 from training.metrics import dice_coeff, iou_score
 
 
-def train_model_logic(task, model, model_info: ModelInfo):
+def train_model_logic(task, model, model_info: SemanticSegmentationModels, req: SemanticTrainingRequest):
     # Import directories, make sure they exist before starting training
-    log_dir = os.path.join(LOG_PATH, str(model_info.identifier_str))
-    os.makedirs(log_dir, exist_ok=True)
     os.makedirs(TRAINED_MODEL_WEIGHTS_PATH, exist_ok=True)
+    os.makedirs(TRAINED_MODEL_INFO_PATHS, exist_ok=True)
+    info_path = Path(os.path.join(TRAINED_MODEL_INFO_PATHS, model_info.registry_key + ".json"))
+    model_path = Path(os.path.join(TRAINED_MODEL_WEIGHTS_PATH, model_info.registry_key + ".pth"))
 
     # Update the task status separately
     task.update_state(state='STARTED')
@@ -22,46 +27,45 @@ def train_model_logic(task, model, model_info: ModelInfo):
     # Init these vars here so you dont run into errors on error catching
     train_metrics, val_metrics, epoch, progress = None, None, None, None
 
+
     try:
         # Load the dataloaders
         train_loader, val_loader = get_dataloader(
-            model_info.training_req.image_urls,
-            model_info.training_req.mask_urls,
-            batch_size=model_info.training_req.hyperparams.batch_size,
-            augmentations=model_info.training_req.augmentations,
+            req.image_urls,
+            req.mask_urls,
+            batch_size=req.hyperparams.batch_size,
+            augmentations=req.augmentations,
             num_workers=6
         )
         #
         val_available = val_loader is not None
         progress = TrainingProgress(
-            total_epochs=model_info.training_req.num_epochs,
-            monitor_type='val' if val_available else 'train',
+            monitored_metric_type='val' if val_available else 'train',
         )
 
         # Set the device
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Loss, we could also make this configurable
-        criterion = torch.nn.CrossEntropyLoss().to(device)
+        match req.loss:
+            case "cross_entropy":
+                criterion = torch.nn.CrossEntropyLoss().to(device)
+            case _:
+                raise ValueError(f"Unknown loss type '{req.loss}'")
 
         # Load the model
         model.to(device)
 
+        # This could also be user-specified, but it requires a way more sophisticated frontend. Might be future work.
         # Load the optimizer and LR Scheduler
-        optimizer = model_info.training_req.hyperparams.get_optimizer(model.parameters())
-        lr_scheduler = model_info.training_req.hyperparams.get_lr_scheduler(optimizer, progress.total_epochs)
+        optimizer = Adam(
+            model.parameters(),
+            lr=req.hyper_params.learning_rate,
+        )
+        lr_scheduler = ReduceLROnPlateau(optimizer)
 
-        for epoch in range(progress.current_epoch, progress.total_epochs):
+        for epoch in range(progress.current_epoch, req.num_epochs):
             task.update_state(state='PROGRESS',
-                              meta={
-                                  'epoch': epoch,
-                                  'best_epoch': progress.best_epoch,
-                                  'best_metrics': progress.monitor_best_metric,
-                                  'total_epochs': progress.total_epochs,
-                                  'percent': int((epoch / progress.total_epochs) * 100),
-                                  'train_metrics': train_metrics,
-                                  'val_metrics': val_metrics,
-                              }
+                              meta=progress.model_dump()
                               )
             # Training round
             train_metrics = run_one_epoch(model, train_loader, optimizer, criterion, device, epoch, train=True)
@@ -80,10 +84,10 @@ def train_model_logic(task, model, model_info: ModelInfo):
             is_new_best_epoch = progress.training_step(train_metrics, val_metrics)
             if is_new_best_epoch:
                 # Save the model
-                torch.save(model, model_info.model_path())
+                torch.save(model, model_path)
 
             # Early stopping
-            if epoch - progress.best_epoch > model_info.training_req.hyperparams.early_stopping_patience > 0:
+            if epoch - progress.best_epoch > req.hyperparams.early_stopping_patience > 0:
                 break
         task.update_state(state='SUCCESS')
     except TaskRevokedError:
@@ -94,19 +98,10 @@ def train_model_logic(task, model, model_info: ModelInfo):
     finally:
         # Close everything and save
         task.update_state(
-            meta={
-                'epoch': epoch,
-                'best_epoch': progress.best_epoch,
-                'best_metrics': progress.monitor_best_metric,
-                'total_epochs': progress.total_epochs,
-                'percent': int((epoch / progress.total_epochs) * 100),
-                'train_metrics': train_metrics,
-                'val_metrics': val_metrics,
-            }
+            meta=progress.model_dump()
         )
-        model_info.training_progress = progress
-        model_info.save_to_disk()
-
+        model_info.progress = progress
+        info_path.write_text(model_info.model_dump_json(indent=4))
 
 def run_one_epoch(model, loader, optimizer, criterion, device, epoch, train=True):
     """ Run one training/validation epoch. Save intermediate results to a tensorboard writer."""

@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "celery",
     "celery-types",
+    "coral-schemas",
     "dotenv",
     "fastapi[standard]",
     "nanoid",
@@ -18,3 +19,6 @@ dependencies = [
     "segmentation-models-pytorch",
     "uvicorn",
 ]
+
+[tool.uv.sources]
+coral-schemas = { git = "https://github.com/yapat-app/coral-schemas.git" }

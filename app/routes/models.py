@@ -9,14 +9,25 @@ router = APIRouter(prefix="/models", tags=["models"])
 logger = getLogger(__name__)
 
 
-@router.get("/{only_return_available}")
-async def get_models(only_return_available: bool = False):
+@router.get("/all")
+async def get_models():
+    """Retrieve all segmentation models."""
+    logger.debug("Fetching available segmentation models.")
+    # Get the models from the registry, excluding the 'getter' key
+    return {
+        "success": True,
+        "models": MODEL_REGISTRY.list_models(only_return_available=False)
+    }
+
+
+@router.get("/all/available")
+async def get_models():
     """Retrieve all available segmentation models."""
     logger.debug("Fetching available segmentation models.")
     # Get the models from the registry, excluding the 'getter' key
     return {
         "success": True,
-        "models": MODEL_REGISTRY.list_models(only_return_available=only_return_available)
+        "models": MODEL_REGISTRY.list_models(only_return_available=True)
     }
 
 

@@ -1,15 +1,57 @@
+import random
 from logging import getLogger
 from typing import Tuple
 
+import numpy as np
 import torch
 import torchvision.transforms.functional as TF
+from torchvision.transforms import RandomCrop
 from torch.utils.data import DataLoader, random_split
 from torch.utils.data import Dataset
 from torchvision.io import read_image
 
-from app.schemas.augmentations import Augmentations
+from schemas.training import Augmentations
 
 logger = getLogger(__name__)
+
+
+def augment(augmentations: Augmentations, img: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Apply augmentations to the input tensor.
+    Args:
+        img: Input tensor of shape (C, H, W).
+        mask: Input tensor of shape (C, H, W).
+    Returns:
+        Augmented tensor.
+    """
+    # Handle random crop with relative size
+    if augmentations.crop_relative_min > 1.:
+        h, w = img.shape[-2], img.shape[-1]
+        min_h = int(h * (1 - augmentations.crop_relative_min))
+        min_w = int(w * (1 - augmentations.crop_relative_min))
+        crop_h = np.random.randint(min_h, h)
+        crop_w = np.random.randint(min_w, w)
+        i, j, h, w = RandomCrop.get_params(img, (crop_h, crop_w))
+        img = TF.crop(img, i, j, h, w)
+        mask = TF.crop(mask, i, j, h, w)
+    if augmentations.rotation_degrees is not None:
+        angle = np.random.uniform(-augmentations.rotation_degrees, augmentations.rotation_degrees)
+        img = TF.rotate(img, angle, interpolation=TF.InterpolationMode.BILINEAR)
+        mask = TF.rotate(mask.unsqueeze(0), angle, interpolation=TF.InterpolationMode.NEAREST).squeeze(0)
+    if augmentations.use_horizontal_flip and random.random() < 0.5:
+        img = TF.hflip(img)
+        mask = TF.hflip(mask)
+    if augmentations.use_vertical_flip and random.random() < 0.5:
+        img = TF.vflip(img)
+        mask = TF.vflip(mask)
+    if augmentations.color_jitter is not None:
+        img = T.ColorJitter(
+            brightness=augmentations.color_jitter[0],
+            contrast=augmentations.color_jitter[1],
+            saturation=augmentations.color_jitter[2],
+            hue=augmentations.color_jitter[3]
+        )(img)
+    return img, mask
 
 
 class SegmentationTensorDataset(Dataset):

@@ -1,14 +1,12 @@
-import json
 import os
-from pathlib import Path
-from typing import Union, Literal, List, override
+import warnings
 from logging import getLogger
+from pathlib import Path
 
 import nanoid
-from pydantic import BaseModel, Field, ValidationError
-from paths import TRAINED_MODEL_INFO_PATHS
+
+from schemas.models import SemanticSegmentationModels as ModelInfo
 from models.model_loader import ModelLoader, PathModelLoader
-from models.model_info import ModelInfo
 
 logger = getLogger(__name__)
 
@@ -28,16 +26,14 @@ class ModelRegistry:
         :param model_loader: ModelLoader object.
         :raises ValueError: If the model identifier is already registered.
         """
-        if model_info.identifier_str in self.model_infos:
-            raise ValueError(f"Model with identifier {model_info.identifier_str} is already registered.")
-        if model_info.identifier_str in self.model_loaders:
-            raise ValueError(f"Model loader with identifier {model_info.identifier_str} is already registered.")
-        if model_info.identifier_str in self.model_keys:
-            raise KeyError(f"Model with identifier {model_info.identifier_str} is already registered.")
-        self.model_infos[model_info.identifier_str] = model_info
-        self.model_loaders[model_info.identifier_str] = model_loader
-        self.model_keys.add(model_info.identifier_str)
-        logger.info(f"Registered model {model_info.identifier_str}. Model is loadable: {model_loader.is_loadable()}")
+        key = model_info.registry_key
+        if key in self.model_keys:
+            raise ValueError(f"Model identifier '{key}' is already registered.")
+        
+        self.model_infos[model_info.registry_key] = model_info
+        self.model_loaders[model_info.registry_key] = model_loader
+        self.model_keys.add(model_info.registry_key)
+        logger.info(f"Registered model {model_info.registry_key}. Model is loadable: {model_loader.is_loadable()}")
 
     def register_model_from_path(self, model_info_path: str):
         model_info = ModelInfo.model_validate_json(Path(model_info_path).read_text())
@@ -45,7 +41,8 @@ class ModelRegistry:
             model_loader = PathModelLoader(model_info.model_path)
             self.register_model(model_info, model_loader)
         else:
-            raise Warning(f"Saved model path {model_info.model_path} does not exist or is not a file. Not registering: {model_info_path}")
+            warnings.warn(f"Saved model path {model_info.model_path} does not exist or is not a file. "
+                          f"Not registering: {model_info_path}")
 
     def get_new_key(self):
         finished = False
@@ -55,21 +52,21 @@ class ModelRegistry:
                 finished = True
         return new_key
 
-    def get_model_info(self, identifier_str: str) -> ModelInfo:
+    def get_model_info(self, registry_key: str) -> ModelInfo:
         """Get the model information for the given identifier."""
-        if identifier_str not in self.model_infos:
-            raise KeyError(f"Model with identifier {identifier_str} is not registered.")
-        return self.model_infos[identifier_str]
+        if registry_key not in self.model_infos:
+            raise KeyError(f"Model with identifier {registry_key} is not registered.")
+        return self.model_infos[registry_key]
 
-    def get_model_loader(self, identifier_str: str) -> ModelLoader:
+    def get_model_loader(self, registry_key: str) -> ModelLoader:
         """Get the model loader for the given identifier."""
-        if identifier_str not in self.model_loaders:
-            raise KeyError(f"Model loader with identifier {identifier_str} is not registered.")
-        return self.model_loaders[identifier_str]
+        if registry_key not in self.model_loaders:
+            raise KeyError(f"Model loader with identifier {registry_key} is not registered.")
+        return self.model_loaders[registry_key]
 
-    def check_model_is_loadable(self, identifier_str: str) -> bool:
+    def check_model_is_loadable(self, registry_key: str) -> bool:
         """Check if the model with the given identifier is loadable."""
-        model = self.get_model_loader(identifier_str)
+        model = self.get_model_loader(registry_key)
         return model.is_loadable()
 
     def list_models(self, only_return_available: bool = True) -> list[ModelInfo]:
@@ -79,9 +76,9 @@ class ModelRegistry:
         """
         if only_return_available:
             # Only return loadable models
-            return [model_info for model_info, model_loader in zip(self.model_infos.values(), self.model_loaders.values()) if model_loader.is_loadable()]
+            return [self.model_infos[k] for k in self.model_keys if self.model_loaders[k].is_loadable()]
         return list(self.model_infos.values())
 
-    def load_model(self, identifier_str: str):
+    def load_model(self, registry_key: str):
         """Load the model with the given identifier."""
-        return self.get_model_loader(identifier_str).load_model()
+        return self.get_model_loader(registry_key).load_model()
