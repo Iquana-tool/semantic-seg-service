@@ -1,57 +1,52 @@
-# Stage 1: Build stage
-# Use an official CUDA-enabled Python runtime as the base image
+# Grab the uv binary
+FROM ghcr.io/astral-sh/uv:latest AS uv_bin
+
+# --- Stage 1: Build stage ---
 FROM nvidia/cuda:12.8.0-base-ubuntu22.04 AS builder
 
-# Install Python and other dependencies
-RUN apt-get update && apt-get install -y python3 python3-pip python3-venv
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+# Install uv
+COPY --from=uv_bin /uv /uvx /bin/
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
+# Install Python (required for uv to build the venv)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-venv && \
+    rm -rf /var/lib/apt/lists/*
 
-# Create and activate a virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+WORKDIR /app
 
-# Copy only the requirements file first
-COPY requirements.txt .
+# Enable bytecode compilation and set environment
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
 
-# Install dependencies
-RUN pip install -r requirements.txt
-RUN pip install "fastapi[standard]"
+# Install dependencies using the lockfile
+# We mount the files to keep the layer clean
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-install-project --no-dev
 
-# Install torch with CUDA
-RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+# --- Stage 2: Final stage ---
+FROM nvidia/cuda:12.8.0-base-ubuntu22.04
 
-# Stage 2: Final stage
-FROM nvidia/cuda:12.4.0-base-ubuntu22.04
-
-# Install Python and other dependencies
-RUN apt-get update && apt-get install -y python3 python3-pip python3-venv
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-
-# Copy the virtual environment from the builder stage
-COPY --from=builder /opt/venv /opt/venv
-
-# Set up the environment to use the virtual environment
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Ensure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
-
-# Install system dependencies required for running the application
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+# Install Python runtime and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
     libgl1 \
     libglib2.0-0 \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy everything but data, logs, model_weights and training_runs
+# Copy the environment from builder
+COPY --from=builder /app/.venv /app/.venv
+
+# Path configuration
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
 COPY . .
 
-# Expose the port the app runs on
 EXPOSE 7000
 
-# Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7000", "--workers", "8"]
+# Use 'fastapi run' to start the application
+CMD ["fastapi", "run", "main.py", "--host", "localhost", "--port", "8002"]
