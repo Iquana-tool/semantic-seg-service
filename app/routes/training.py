@@ -1,7 +1,7 @@
 from celery.result import AsyncResult
 from fastapi import APIRouter
 
-from schemas.training import SemanticTrainingRequest
+from iquana_toolbox.schemas.training import SemanticTrainingRequest
 from app.state import MODEL_REGISTRY
 from celery_app import celery
 from celery_tasks.training import train_model_task

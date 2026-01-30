@@ -2,8 +2,8 @@ import json
 from logging import getLogger
 
 from fastapi import APIRouter
-from schemas.contour_hierarchy import ContourHierarchy
-from schemas.service_requests import SemanticSegmentationRequest, MultiSemanticSegmentationRequest
+from iquana_toolbox.schemas.contour_hierarchy import ContourHierarchy
+from iquana_toolbox.schemas.service_requests import SemanticSegmentationRequest, MultiSemanticSegmentationRequest
 from starlette.responses import StreamingResponse
 
 from inference.core import inference_logic

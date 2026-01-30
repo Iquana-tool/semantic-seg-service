@@ -5,8 +5,8 @@ import redis
 import torch
 from celery.exceptions import TaskRevokedError
 
-from schemas.training import TrainingProgress, SemanticTrainingRequest
-from schemas.models import SemanticSegmentationModels
+from iquana_toolbox.schemas.training import TrainingProgress, SemanticTrainingRequest
+from iquana_toolbox.schemas.models import SemanticSegmentationModels
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 

@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, random_split
 from torch.utils.data import Dataset
 from torchvision.io import read_image
 
-from schemas.training import Augmentations
+from iquana_toolbox.schemas.training import Augmentations
 
 logger = getLogger(__name__)
 
