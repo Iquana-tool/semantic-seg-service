@@ -16,7 +16,8 @@ async def get_models():
     # Get the models from the registry, excluding the 'getter' key
     return {
         "success": True,
-        "models": MODEL_REGISTRY.list_models(only_return_available=False)
+        "message": "Retrieved all models.",
+        "result": MODEL_REGISTRY.list_models(only_return_available=False)
     }
 
 
@@ -27,7 +28,8 @@ async def get_models():
     # Get the models from the registry, excluding the 'getter' key
     return {
         "success": True,
-        "models": MODEL_REGISTRY.list_models(only_return_available=True)
+        "message": "Retrieved all available models.",
+        "result": MODEL_REGISTRY.list_models(only_return_available=True)
     }
 
 

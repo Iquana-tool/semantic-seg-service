@@ -21,11 +21,11 @@ async def start_training(req: SemanticTrainingRequest):
     new_model_info = model_info.copy()
     new_model_info.registry_key = new_identifier
     new_model_info.label_hierarchy = req.label_hierarchy
-    task: AsyncResult = train_model_task.delay(model_loader.load_model(), new_model_info)
+    task: AsyncResult = train_model_task.delay(model_loader.load_model(), new_model_info, req)
     return {
         "success": True,
         "message": "Training task enqueued.",
-        "result": task.id,
+        "result": {"task_id": task.task_id, "state": task.state, "data": task.info}
     }
 
 

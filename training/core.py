@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import redis
@@ -19,6 +20,7 @@ redis_client = redis.Redis(host='redis-server', port=6379, db=0)
 
 def train_model_logic(task, model, model_info: SemanticSegmentationModels, req: SemanticTrainingRequest):
     # Import directories, make sure they exist before starting training
+    task_id = task.request.id
     os.makedirs(TRAINED_MODEL_WEIGHTS_PATH, exist_ok=True)
     os.makedirs(TRAINED_MODEL_INFO_PATHS, exist_ok=True)
     info_path = Path(os.path.join(TRAINED_MODEL_INFO_PATHS, model_info.registry_key + ".json"))
@@ -67,9 +69,15 @@ def train_model_logic(task, model, model_info: SemanticSegmentationModels, req: 
         lr_scheduler = ReduceLROnPlateau(optimizer)
 
         for epoch in range(progress.current_epoch, req.num_epochs):
-            task.update_state(state='PROGRESS',
-                              meta=progress.model_dump()
-                              )
+            # 1. Update Celery State (for polling)
+            current_meta = progress.model_dump()
+            task.update_state(state='PROGRESS', meta=current_meta)
+
+            # 2. Publish to Redis (for streaming)
+            # We add the state to the dict so the stream knows what's happening
+            stream_payload = {"state": "PROGRESS", "data": current_meta}
+            redis_client.publish(f"task_progress_{task_id}", json.dumps(stream_payload))
+
             # Training round
             train_metrics = run_one_epoch(model, train_loader, optimizer, criterion, device, epoch, train=True)
 
@@ -93,10 +101,16 @@ def train_model_logic(task, model, model_info: SemanticSegmentationModels, req: 
             if epoch - progress.best_epoch > req.hyperparams.early_stopping_patience > 0:
                 break
         task.update_state(state='SUCCESS')
+        redis_client.publish(f"task_progress_{task_id}",
+                             json.dumps({"state": "SUCCESS", "data": progress.model_dump()}))
     except TaskRevokedError:
         task.update_state(state='STOPPED')
+        redis_client.publish(f"task_progress_{task_id}",
+                             json.dumps({"state": "STOPPED", "data": progress.model_dump()}))
     except Exception as e:
         task.update_state(state='FAILURE', meta={'error': str(e)})
+        redis_client.publish(f"task_progress_{task_id}",
+                             json.dumps({"state": "FAILED", "data": progress.model_dump()}))
         raise e
     finally:
         # Close everything and save
