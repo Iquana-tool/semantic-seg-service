@@ -1,7 +1,7 @@
 import os
 
 import segmentation_models_pytorch as smp
-from schemas.models import SemanticSegmentationModels
+from iquana_toolbox.schemas.models import SemanticSegmentationModels
 from models.model_loader import BaseModelLoader as ModelLoader
 from models.model_registry import ModelRegistry
 from paths import TRAINED_MODEL_INFO_PATHS
