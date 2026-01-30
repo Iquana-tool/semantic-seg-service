@@ -22,7 +22,6 @@ def register_models(model_registry: ModelRegistry):
         ),
         model_loader=ModelLoader(
             loader_function=smp.Unet,
-            kwargs=dict(encoder_name="resnet34", encoder_weights="imagenet")
         ),
     )
 
@@ -40,7 +39,6 @@ def register_models(model_registry: ModelRegistry):
         ),
         model_loader=ModelLoader(
             loader_function=smp.UnetPlusPlus,
-            kwargs=dict(encoder_name="resnet34", encoder_weights="imagenet")
         ),
     )
 
@@ -58,7 +56,6 @@ def register_models(model_registry: ModelRegistry):
         ),
         model_loader=ModelLoader(
             loader_function=smp.DeepLabV3,
-            kwargs=dict(encoder_name="resnet34", encoder_weights="imagenet")
         ),
     )
 

@@ -12,7 +12,7 @@ logger = getLogger(__name__)
 @router.get("/models/all")
 async def list_models():
     """ Lists all available models in the registry. """
-    available_models = MODEL_REGISTRY.get_model(only_return_available=False)
+    available_models = MODEL_REGISTRY.list_models(only_return_available=False)
     return {
         "success": True,
         "message": f"Retrieved {len(available_models)} available models.",
@@ -20,7 +20,7 @@ async def list_models():
 
 
 @router.get("/models/all/available")
-async def list_models():
+async def list_available_models():
     """ Lists all available models in the registry. """
     available_models = MODEL_REGISTRY.list_models(only_return_available=True)
     return {

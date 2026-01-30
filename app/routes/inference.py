@@ -7,7 +7,7 @@ from iquana_toolbox.schemas.service_requests import SemanticSegmentationRequest,
 from starlette.responses import StreamingResponse
 from inference.core import inference_logic
 
-router = APIRouter(prefix="/", tags=["inference"])
+router = APIRouter(tags=["inference"])
 session_router = APIRouter(prefix="/annotation_session", tags=["session"])
 logger = getLogger(__name__)
 
