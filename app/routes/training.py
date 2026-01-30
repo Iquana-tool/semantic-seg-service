@@ -1,320 +1,82 @@
-import os
-import shutil
-import json
-from fastapi import APIRouter, BackgroundTasks
-from app.schemas.training import TrainingRequest
-from training.dataloader import get_dataloader
-from models import MODEL_REGISTRY
-from paths import DATA_PATH, MODEL_PATH, LOG_PATH, JOBS_PATH
-from logging import getLogger
-import torch
-from torch.utils.tensorboard import SummaryWriter
-from training.metrics import dice_coeff, iou_score
-from training.early_stopping import EarlyStopping
-from models import load_model_from_checkpoint_path, get_registry_key_from_id, delete_model
-from training.model_info import ModelInfo, JobStatus
-from app.util.job_id_management import get_new_job_id
+from celery.result import AsyncResult
+from fastapi import APIRouter
+
+from iquana_toolbox.schemas.training import SemanticTrainingRequest
+from app.state import MODEL_REGISTRY
+from celery_app import celery
+from celery_tasks.training import train_model_task
 
 router = APIRouter(prefix="/training", tags=["training"])
-logger = getLogger(__name__)
 
-
-def save_job_status(job_id, status: str, result: str = "", extra: dict = None):
-    os.makedirs(JOBS_PATH, exist_ok=True)
-    obj = {"status": status, "result": result}
-    if extra:
-        obj.update(extra)
-    with open(os.path.join(JOBS_PATH, f"{job_id}.json"), "w") as f:
-        json.dump(obj, f)
-
-
-def read_job_status(job_id):
-    try:
-        with open(os.path.join(JOBS_PATH, f"{job_id}.json"), "r") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
-@router.post("/start_training")
-async def start_training(req: TrainingRequest, background_tasks: BackgroundTasks):
-    """ Start a training run for a specified model with a specified dataset id and training parameters."""
-    logger.info(f"Received training request: {req}")
-    # Restart = Starting training with a base model. Otherwise continue training specified model.
-    restart = not type(req.model_identifier) is int
-    if type(req.model_identifier) is int:
-        # We overwrite the old job id, instead of giving a new one.
-        job_id = req.model_identifier
-        job_type = "Continuing"
-    else:
-        # Get a new job id, because we either train from a base model (when type is not int) or we dont want to
-        # overwrite.
-        job_id = get_new_job_id()
-        job_type = "Starting"
-    if type(req.model_identifier) is str:
-        registry_key = req.model_identifier
-    else:
-        registry_key, _ = get_registry_key_from_id(job_id)
-    dataset_path = os.path.join(DATA_PATH, str(req.dataset_id))
-    log_dir = os.path.join(LOG_PATH, str(job_id))
-    model_save_path = os.path.join(MODEL_PATH, f"{registry_key}_{job_id}.pt")
-    info_save_path = model_save_path.rsplit(".", 1)[0] + ".json"
-    if os.path.exists(log_dir) and restart:
-        # Restarting training removes the entire log dir
-        logger.warning(f"JOB {job_id}: Log directory already exists: {log_dir}. Overwriting logs.")
-        shutil.rmtree(log_dir)
-    os.makedirs(log_dir, exist_ok=True)
-    os.makedirs(MODEL_PATH, exist_ok=True)
-    os.makedirs(JOBS_PATH, exist_ok=True)
-
-    logger.info(f"JOB {job_id}: {job_type} training of model {registry_key} with job id {job_id}. ")
-    # To keep track of everything
-    model_info = ModelInfo(registry_key, job_id)
-    if os.path.exists(info_save_path):
-        # Load existing model info if it exists. This means it has been trained before.
-        model_info.load(info_save_path)
-    model_info.update(
-        {
-            "model_identifier": registry_key,  # Must be registry key, not req.model_identifier
-            "classes": req.num_classes,
-            "in_channels": req.in_channels,
-            "image_size": req.image_size,
-            "total_epochs": req.epochs,
-            "dataset_id": req.dataset_id,
-            "batch_size": req.batch_size,
-            "augment": req.augment,
-            "lr": req.lr,
-            "early_stopping": req.early_stopping,
+@router.post("/start")
+async def start_training(req: SemanticTrainingRequest):
+    model_info = MODEL_REGISTRY.get_model_info(req.model_registry_key)
+    model_loader = MODEL_REGISTRY.get_model_loader(req.model_registry_key)
+    if model_info.pretrained and not model_info.finetunable:
+        return {
+            "success": False,
+            "message": f"Model {req.model_registry_key} already trained and not finetunable."
         }
-    )
-    model_info.set_training_status(JobStatus.STARTING)
-    model_info.save(info_save_path)
-
-    save_job_status(job_id, "queued")
-
-    def background_train_job():
-        try:
-            # Your request and path setup; assumes variables: req, dataset_path, job_id, log_dir, model_save_path
-            train_loader, val_loader, test_loader = get_dataloader(
-                dataset_path,
-                batch_size=req.batch_size,
-                augment=req.augment,
-                normalize=False,
-                image_size=req.image_size,
-                split=True,
-                val_ratio=0.1,
-                test_ratio=0.1,
-                min_samples_for_split=0,
-                seed=42,
-                num_workers=6
-            )
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            criterion = torch.nn.CrossEntropyLoss()
-            writer = SummaryWriter(log_dir=log_dir)
-            logger.info(f"JOB {job_id}: Device {device}. ")
-
-            start_epoch = 1
-            if os.path.exists(model_save_path):
-                model, checkpoint = load_model_from_checkpoint_path(model_save_path, device=device, eval_mode=False)
-                optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
-                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-                start_epoch = checkpoint.get("epoch", 1)
-                logger.info(f"JOB {job_id}: Resuming training of {req.model_identifier} from epoch {start_epoch}.")
-            else:
-                logger.warning(f"JOB {job_id}: Checkpoint {model_save_path} does not exist. Starting training from scratch.")
-                model = (MODEL_REGISTRY[registry_key])["getter"](classes=req.num_classes, in_channels=req.in_channels)
-                optimizer = torch.optim.Adam(model.parameters(), lr=req.lr)
-                model = model.to(device)
-
-            early_stopping = EarlyStopping(patience=8)
-            history = []
-            val_available = val_loader is not None
-            test_available = test_loader is not None
-            logger.info(f"JOB {job_id}: Validation set available: {val_available}, Test set available: {test_available}")
-            val_loss, val_dice, val_iou = -1., -1., -1.
-            save_job_status(job_id, "in progress")
-            model_info.set_training_status(JobStatus.IN_PROGRESS)
-            model_info.num_input_images = len(train_loader.dataset)
-            for epoch in range(start_epoch, start_epoch + req.epochs):
-                train_loss, train_dice, train_iou = run_one_epoch(model,
-                                                                  train_loader,
-                                                                  optimizer,
-                                                                  criterion,
-                                                                  device,
-                                                                  writer,
-                                                                  epoch=epoch,
-                                                                  train=True)
-                if val_available:
-                    val_loss, val_dice, val_iou = run_one_epoch(model,
-                                                                val_loader,
-                                                                optimizer,
-                                                                criterion,
-                                                                device,
-                                                                writer,
-                                                                epoch=epoch,
-                                                                train=False)
-
-                logger.debug(f"JOB {job_id}: Epoch {epoch} / {start_epoch + req.epochs}. "
-                             f"Validation dice: {val_dice:.2%} \t Training dice: {train_dice:.2%}")
-                writer.add_scalar("Loss/train", train_loss, epoch)
-                writer.add_scalar("Loss/val", val_loss, epoch)
-                writer.add_scalar("Dice/train", train_dice, epoch)
-                writer.add_scalar("Dice/val", val_dice, epoch)
-                writer.add_scalar("IoU/train", train_iou, epoch)
-                writer.add_scalar("IoU/val", val_iou, epoch)
-
-                history.append(dict(
-                    epoch=epoch,
-                    train_loss=train_loss, val_loss=val_loss,
-                    train_dice=train_dice, val_dice=val_dice,
-                    train_iou=train_iou, val_iou=val_iou
-                ))
-                metric_to_measure = val_dice if val_available else train_dice
-                model_info.training_step(train_loss, train_dice, train_iou, val_loss, val_dice, val_iou)
-                if ((val_available and val_dice > model_info.best_val_dice) or
-                        (not val_available and train_dice > model_info.best_train_dice)):
-                    logger.info(f"JOB {job_id}: Saving best model to {model_save_path}.")
-                    if val_available:
-                        model_info.best_val_dice = val_dice
-                    model_info.best_train_dice = train_dice
-                    model_info.best_epoch = epoch
-                    checkpoint_obj = {
-                        "model_state_dict": model.state_dict(),
-                        "optimizer_state_dict": optimizer.state_dict(),
-                        "epoch": epoch,
-                    }
-                    torch.save(checkpoint_obj, model_save_path)
-                    # Evaluate on test set if available and model improved
-                    test_dice, test_iou = None, None
-                    if test_available:
-                        test_dice, test_iou = run_test(model, test_loader, device)
-                        model_info.update(
-                            {
-                                "test_dice": test_dice,
-                                "best_test_dice": test_dice,
-                                "test_iou": test_iou,
-                            }
-                        )
-                # Save meta info
-                model_info.save(info_save_path)
-                if epoch % 5 == 0:
-                    status_extra = {
-                        "epoch": epoch + 1,
-                        "total_epochs": req.epochs,
-                        "train_dice": train_dice,
-                        "val_dice": val_dice,
-                    }
-                    save_job_status(job_id, "in progress", extra=status_extra)
-                if req.early_stopping and early_stopping.step(metric_to_measure):
-                    break
-
-            writer.close()
-
-            status_extra = {
-                "history": history,
-                "best_epoch": model_info.best_epoch,
-                "best_val_dice": model_info.best_val_dice,
-                "test_dice": model_info.test_dice if test_available else None,
-                "test_iou": model_info.test_iou if test_available else None,
-            }
-            model_info.set_training_status(JobStatus.FINISHED)
-            # Save meta info
-            model_info.save(info_save_path)
-            logger.info(f"JOB {job_id}: Completed.")
-            save_job_status(job_id, "completed", result=model_save_path, extra=status_extra)
-
-        except Exception as e:
-            if type(e) == FileNotFoundError:
-                # We cause this error on purpose to stop the background task
-                model_info.set_training_status(JobStatus.STOPPED)
-            else:
-                # If there is another error, then the task failed
-                model_info.set_training_status(JobStatus.FAILED)
-            # Save meta info
-            model_info.save(info_save_path)
-            save_job_status(job_id, "failed", result=str(e))
-            raise e
-
-    background_tasks.add_task(background_train_job)
-    return {"success": True,
-            "job_id": job_id,
-            "status": "In progress",
-            "message": "Training started in the background."}
+    new_identifier = MODEL_REGISTRY.get_new_key()
+    new_model_info = model_info.copy()
+    new_model_info.registry_key = new_identifier
+    new_model_info.label_hierarchy = req.label_hierarchy
+    task: AsyncResult = train_model_task.delay(model_loader.load_model(), new_model_info, req)
+    return {
+        "success": True,
+        "message": "Training task enqueued.",
+        "result": {"task_id": task.task_id, "state": task.state, "data": task.info}
+    }
 
 
-@router.get("/get_job_status/{model_id}")
-async def get_job_status(model_id: str):
-    status = read_job_status(model_id)
-    if status is None:
-        return {"success": True, "message": "No job", "status": "No job"}
-    return status
+@router.get("/tasks", description="Get all tasks")
+async def get_tasks():
+    """ Returns a list of all tasks. """
+    i = celery.control.inspect()
+
+    # These calls return a dict keyed by worker name: {'worker@host': [tasks]}
+    active = i.active() or {}
+    reserved = i.reserved() or {}
+    scheduled = i.scheduled() or {}
+
+    def extract_ids(worker_map):
+        task_ids = []
+        for worker_name, tasks in worker_map.items():
+            for task in tasks:
+                task_ids.append(task['id'])
+        return task_ids
+
+    return {
+        "active": extract_ids(active),  # Currently running on GPU/CPU
+        "reserved": extract_ids(reserved),  # In queue, waiting for a worker
+        "scheduled": extract_ids(scheduled)  # Tasks with an ETA/countdown
+    }
 
 
-@router.get("/cancel_job/{job_id}")
-async def cancel_job(job_id: int):
-    logger.warning("THIS IS A WORKAROUND FOR CANCELLING JOBS!\nIt works by deleting the log directory which leads to an"
-                   " error with tensorboard, which in turn stops the background task. Using this might lead to "
-                   "unexpected behaviour.")
-    log_dir = os.path.join(LOG_PATH, str(job_id))
-    shutil.rmtree(log_dir, ignore_errors=True)
-    #delete_model(job_id)
-    return {"success": True,
-            "message": f"Training of model {job_id} should be cancelled. This might take a while. "
-                       f"Please check again in a few seconds."}
+@router.delete("/tasks/{task_id}")
+async def stop_training(task_id: str):
+    """
+    Stop a running or queued training task by its task_id.
+    """
+    celery.control.revoke(task_id, terminate=True)
+    return {
+        "success": True,
+        "status": "Stopped",
+        "message": f"Training task {task_id} has been stopped/canceled."
+    }
 
 
-@router.get("/download_model/{model_id}")
-async def download_model(model_id: str):
-    status = read_job_status(model_id)
-    if status is None or status['status'] != 'completed':
-        return {"error": "Model not available for download"}
-    from fastapi.responses import FileResponse
-    return FileResponse(status['result'], filename=f"{model_id}.pt")
+@router.get("/tasks/{task_id}")
+async def get_training_progress(task_id: str):
+    """ Returns a progress report for the training task. """
+    res = AsyncResult(task_id, app=celery)
 
+    # In Celery, during 'PROGRESS' state, the metadata is in 'res.info'
+    # If the task is finished, 'res.result' contains the return value.
+    progress_data = res.info if isinstance(res.info, dict) else {"status": res.state}
 
-def run_one_epoch(model, loader, optimizer, criterion, device, writer: SummaryWriter, epoch, train=True):
-    """ Run one training/validation epoch. Save intermediate results to a tensorboard writer."""
-    if loader is None:
-        return 0.0, 0.0, 0.0
-    running_loss, running_dice, running_iou, nbatches = 0.0, 0.0, 0.0, 0
-    if train:
-        model.train()
-    else:
-        model.eval()
-    added = False
-    for imgs, masks in loader:
-        imgs, masks = imgs.to(device), masks.to(device)
-        if train:
-            optimizer.zero_grad()
-        outputs = model(imgs)
-        loss = criterion(outputs, masks)
-        if not added:
-            writer.add_images(f"Inputs/{'train' if train else 'val'}", imgs, epoch, dataformats="NCHW")
-            # Assume masks shape = [B, H, W], int (class indices)
-            masks_vis = masks.unsqueeze(1).float() / masks.max().clamp(min=1)  # [B,1,H,W] float in 0-1
-            writer.add_images(f"Targets/{'train' if train else 'val'}", masks_vis, epoch, dataformats="NCHW")
-            pred_classes = torch.argmax(outputs, dim=1)  # [B,H,W]
-            pred_vis = pred_classes.unsqueeze(1).float() / pred_classes.max().clamp(min=1)
-            writer.add_images(f"Outputs/{'train' if train else 'val'}", pred_vis, epoch, dataformats="NCHW")
-            added = True
-        if train:
-            loss.backward()
-            optimizer.step()
-        running_loss += loss.item()
-        running_dice += dice_coeff(outputs, masks).item()
-        running_iou  += iou_score(outputs, masks).item()
-        nbatches += 1
-    n = max(nbatches, 1)
-    return running_loss / n, running_dice / n, running_iou / n
-
-def run_test(model, test_loader, device):
-    test_dice, test_iou, ntest = 0.0, 0.0, 0
-    with torch.no_grad():
-        for imgs, masks in test_loader:
-            imgs, masks = imgs.to(device), masks.to(device)
-            outputs = model(imgs)
-            test_dice += dice_coeff(outputs, masks).item()
-            test_iou += iou_score(outputs, masks).item()
-            ntest += 1
-    n = max(ntest, 1)
-    return test_dice / n, test_iou / n
+    return {
+        "task_id": task_id,
+        "state": res.state,
+        "data": progress_data
+    }

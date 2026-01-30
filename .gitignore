@@ -1,8 +1,9 @@
 logs.txt
 .venv
 data
-saved_models
-training_jobs
+model_weights
+model_registry_entries
+training_runs
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -1,14 +1,29 @@
 import logging
 import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from logging import getLogger
-from app.routes import data, training, models, segment, router
-from paths import DATA_PATH, MODEL_PATH, LOG_PATH, JOBS_PATH
+from app.routes import training, models, inference, router
+from paths import DATA_PATH, TRAINED_MODEL_WEIGHTS_PATH, LOG_PATH, TRAINED_MODEL_INFO_PATHS
+from models.register_models import register_models
+from app.state import MODEL_REGISTRY
 
 logger = getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup code
+    logger.debug("Starting up the Semantic Segmentation Service")
+    logger.debug("Registering models in the MODEL_REGISTRY")
+    register_models(MODEL_REGISTRY)
+    yield
+    # Shutdown code
+    logger.debug("Shutting down the Prompted Segmentation Service")
 
 
 def create_app():
@@ -22,6 +37,7 @@ def create_app():
 
     app = FastAPI(
         title="Backend AI Trainer",
+        lifespan=lifespan,
         description="FastAPI backend for training automatic segmentation models",
         version="0.1.0",
     )
@@ -34,17 +50,15 @@ def create_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
     app.include_router(router)
-    app.include_router(data.router)
     app.include_router(training.router)
     app.include_router(models.router)
-    app.include_router(segment.router)
+    app.include_router(inference.router)
 
     os.makedirs(DATA_PATH, exist_ok=True)
-    os.makedirs(MODEL_PATH, exist_ok=True)
+    os.makedirs(TRAINED_MODEL_WEIGHTS_PATH, exist_ok=True)
     os.makedirs(LOG_PATH, exist_ok=True)
-    os.makedirs(JOBS_PATH, exist_ok=True)
+    os.makedirs(TRAINED_MODEL_INFO_PATHS, exist_ok=True)
 
     # Root endpoint
     @app.get("/")

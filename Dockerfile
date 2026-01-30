@@ -1,50 +1,42 @@
-# Stage 1: Build stage
+FROM ghcr.io/astral-sh/uv:latest AS uv_bin
 
-# Use an official Python runtime as the base image
-FROM python:3.13-slim AS builder
+# --- Stage 1: Build stage ---
+FROM python:3.11-slim AS builder
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
+COPY --from=uv_bin /uv /uvx /bin/
 
-# Create and activate a virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# Set uv configuration
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
 
-# Copy only the requirements file first
-COPY requirements.txt .
+WORKDIR /app
 
-# Install dependencies
-RUN pip install -r requirements.txt
-RUN pip install "fastapi[standard]"
+# Install dependencies first for caching
+# We only need these files to sync the environment
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-install-project --no-dev --extra cpu
 
-# Install torch without CUDA
-RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# --- Stage 2: Final stage ---
+FROM python:3.11-slim
 
-# Stage 2: Final stage
-FROM python:3.13-slim
-
-# Copy the virtual environment from the builder stage
-COPY --from=builder /opt/venv /opt/venv
-
-# Set up the environment to use the virtual environment
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Ensure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
-
-# Install system dependencies required for running the application
-RUN apt-get update --allow-unauthenticated && \
-    apt-get install -y --no-install-recommends --allow-unauthenticated \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy everything but data, logs, saved_models and training_jobs
+# Copy the environment uv created (.venv is the default)
+COPY --from=builder /app/.venv /app/.venv
+
+# Add the venv to the path
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
 COPY . .
 
-# Expose the port the app runs on
 EXPOSE 7000
 
-# Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7000", "--workers", "8"]
+CMD ["fastapi", "run", "main.py", "--host", "0.0.0.0", "--port", "7000"]
