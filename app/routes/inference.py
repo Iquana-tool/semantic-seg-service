@@ -5,14 +5,14 @@ from fastapi import APIRouter
 from iquana_toolbox.schemas.contour_hierarchy import ContourHierarchy
 from iquana_toolbox.schemas.service_requests import SemanticSegmentationRequest, MultiSemanticSegmentationRequest
 from starlette.responses import StreamingResponse
-
 from inference.core import inference_logic
 
-router = APIRouter(prefix="/inference", tags=["inference"])
+router = APIRouter(prefix="/", tags=["inference"])
+session_router = APIRouter(prefix="/annotation_session", tags=["session"])
 logger = getLogger(__name__)
 
 
-@router.post("/run")
+@session_router.post("/run")
 async def inference(
     request: SemanticSegmentationRequest,
 ):

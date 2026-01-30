@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from logging import getLogger
-from app.routes import training, models, inference, router
+from app.routes import training, models, inference, images, router
 from paths import DATA_PATH, TRAINED_MODEL_WEIGHTS_PATH, LOG_PATH, TRAINED_MODEL_INFO_PATHS
 from models.register_models import register_models
 from app.state import MODEL_REGISTRY
@@ -53,7 +53,10 @@ def create_app():
     app.include_router(router)
     app.include_router(training.router)
     app.include_router(models.router)
+    app.include_router(models.session_router)
     app.include_router(inference.router)
+    app.include_router(images.router)
+    app.include_router(images.session_router)
 
     os.makedirs(DATA_PATH, exist_ok=True)
     os.makedirs(TRAINED_MODEL_WEIGHTS_PATH, exist_ok=True)
