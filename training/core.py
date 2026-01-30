@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-
+import redis
 import torch
 from celery.exceptions import TaskRevokedError
 
@@ -9,9 +9,12 @@ from schemas.models import SemanticSegmentationModels
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from paths import TRAINED_MODEL_WEIGHTS_PATH, LOG_PATH, TRAINED_MODEL_INFO_PATHS
+from paths import TRAINED_MODEL_WEIGHTS_PATH, TRAINED_MODEL_INFO_PATHS
 from training.dataloader import get_dataloader
 from training.metrics import dice_coeff, iou_score
+
+
+redis_client = redis.Redis(host='redis-server', port=6379, db=0)
 
 
 def train_model_logic(task, model, model_info: SemanticSegmentationModels, req: SemanticTrainingRequest):
