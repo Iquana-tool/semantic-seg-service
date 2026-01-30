@@ -5,7 +5,7 @@ from pathlib import Path
 
 import nanoid
 
-from schemas.models import SemanticSegmentationModels as ModelInfo
+from iquana_toolbox.schemas.models import SemanticSegmentationModels as ModelInfo
 from models.model_loader import ModelLoader, PathModelLoader
 
 logger = getLogger(__name__)
