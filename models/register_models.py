@@ -18,7 +18,8 @@ def register_models(model_registry: ModelRegistry):
             pretrained=False,
             finetunable=False,
             trainable=True,
-            label_hierarchy=None
+            label_hierarchy=None,
+            training_task_id=None
         ),
         model_loader=ModelLoader(
             loader_function=smp.Unet,
@@ -35,7 +36,8 @@ def register_models(model_registry: ModelRegistry):
             pretrained=False,
             finetunable=False,
             trainable=True,
-            label_hierarchy=None
+            label_hierarchy=None,
+            training_task_id=None
         ),
         model_loader=ModelLoader(
             loader_function=smp.UnetPlusPlus,
@@ -52,7 +54,8 @@ def register_models(model_registry: ModelRegistry):
             pretrained=False,
             finetunable=False,
             trainable=True,
-            label_hierarchy=None
+            label_hierarchy=None,
+            training_task_id=None
         ),
         model_loader=ModelLoader(
             loader_function=smp.DeepLabV3,
@@ -69,7 +72,8 @@ def register_models(model_registry: ModelRegistry):
             pretrained=False,
             finetunable=False,
             trainable=True,
-            label_hierarchy=None
+            label_hierarchy=None,
+            training_task_id=None
         ),
         model_loader=ModelLoader(
             loader_function=smp.DeepLabV3Plus,
