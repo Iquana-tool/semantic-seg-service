@@ -68,7 +68,7 @@ def train_model_logic(task, model, model_info: SemanticSegmentationModels, req: 
         )
         lr_scheduler = ReduceLROnPlateau(optimizer)
 
-        for epoch in range(progress.current_epoch, req.num_epochs):
+        for epoch in range(progress.epoch_count, req.num_epochs):
             # 1. Update Celery State (for polling)
             current_meta = progress.model_dump()
             task.update_state(state='PROGRESS', meta=current_meta)
