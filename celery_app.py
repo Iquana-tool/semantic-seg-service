@@ -1,9 +1,8 @@
 from celery import Celery
-from redis import Redis
+from paths import REDIS_URL
 
-redis = Redis(host="localhost", port=6379, db=0)
-celery = Celery(
-    "semantic_seg",
-    broker="redis://localhost:6379/0",
-    backend="redis://localhost:6379/1",
+celery_app = Celery(
+    "iquana_celery", # Must match the name in your other services
+    broker=f"{REDIS_URL}/0",
+    backend=f"{REDIS_URL}/1"
 )

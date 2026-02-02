@@ -3,7 +3,7 @@ from fastapi import APIRouter
 
 from iquana_toolbox.schemas.training import SemanticTrainingRequest
 from app.state import MODEL_REGISTRY
-from celery_app import celery
+from celery_app import celery_app
 from celery_tasks.training import train_model_task
 
 router = APIRouter(prefix="/training", tags=["training"])
@@ -32,7 +32,7 @@ async def start_training(req: SemanticTrainingRequest):
 @router.get("/tasks", description="Get all tasks")
 async def get_tasks():
     """ Returns a list of all tasks. """
-    i = celery.control.inspect()
+    i = celery_app.control.inspect()
 
     # These calls return a dict keyed by worker name: {'worker@host': [tasks]}
     active = i.active() or {}
@@ -58,7 +58,7 @@ async def stop_training(task_id: str):
     """
     Stop a running or queued training task by its task_id.
     """
-    celery.control.revoke(task_id, terminate=True)
+    celery_app.control.revoke(task_id, terminate=True)
     return {
         "success": True,
         "status": "Stopped",
@@ -69,7 +69,7 @@ async def stop_training(task_id: str):
 @router.get("/tasks/{task_id}")
 async def get_training_progress(task_id: str):
     """ Returns a progress report for the training task. """
-    res = AsyncResult(task_id, app=celery)
+    res = AsyncResult(task_id, app=celery_app)
 
     # In Celery, during 'PROGRESS' state, the metadata is in 'res.info'
     # If the task is finished, 'res.result' contains the return value.
