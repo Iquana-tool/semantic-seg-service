@@ -44,11 +44,16 @@ async def load_model(model_registry_key: str, user_id: str):
     """ Loads a model into the cache if not already loaded. This is a convenience endpoint; models are loaded
         automatically when needed, but this can be called at the start
         of an annotation session to preload the model."""
+    model_info = MODEL_REGISTRY.get_model_info(model_registry_key)
+    if model_info.label_hierarchy is None:
+        return {
+            "success": False,
+            "message": f"Model {model_registry_key} has not been trained to predict anything. Cannot load this model.",
+        }
     if MODEL_CACHE.check_if_loaded(user_id, model_registry_key):
         return {
             "success": True,
             "message": f"Model {model_registry_key} is already loaded in cache.",
-            "model_id": model_registry_key
         }
     else:
         model = MODEL_REGISTRY.load_model(model_registry_key)

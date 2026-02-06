@@ -1,30 +1,58 @@
 import json
 import os
 from pathlib import Path
+
 import redis
 import torch
 from celery.exceptions import TaskRevokedError
-
 from iquana_toolbox.schemas.training import TrainingProgress, SemanticTrainingRequest
-from iquana_toolbox.schemas.models import SemanticSegmentationModels
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from paths import TRAINED_MODEL_WEIGHTS_PATH, TRAINED_MODEL_INFO_PATHS
+from app.state import MODEL_REGISTRY
+from celery_app import celery_app
+from paths import TRAINED_MODEL_WEIGHTS_PATH, TRAINED_MODEL_INFO_PATHS, REDIS_URL
 from training.dataloader import get_dataloader
 from training.metrics import dice_coeff, iou_score
 
 
-redis_client = redis.Redis(host='redis-server', port=6379, db=0)
+@celery_app.task(name="semantic_segmentation.train_model")
+def train_model_logic(task, req: SemanticTrainingRequest):
+    # Load everything from disk and model registry
+    model_info = MODEL_REGISTRY.get_model_info(req.model_registry_key)
+    model_loader = MODEL_REGISTRY.get_model_loader(req.model_registry_key)
+    if not model_info.trainable:
+        return {
+            "success": False,
+            "message": f"Model {req.model_registry_key} not trainable."
+        }
+    if model_info.pretrained and not model_info.finetunable:
+        return {
+            "success": False,
+            "message": f"Model {req.model_registry_key} already trained and not finetunable."
+        }
 
 
-def train_model_logic(task, model, model_info: SemanticSegmentationModels, req: SemanticTrainingRequest):
-    # Import directories, make sure they exist before starting training
+    # Set new fields
+    new_identifier = MODEL_REGISTRY.get_new_key()
+    model_info = model_info.copy()
+    model_info.registry_key = new_identifier
+    model_info.label_hierarchy = req.label_hierarchy
+
+    # Load the model
+    model = model_loader.load_model()
+
+    # Load redis client and task_id
+    redis_client = redis.from_url(REDIS_URL+ "/0", decode_responses=True)
     task_id = task.request.id
+
+    # Make necessary directories
     os.makedirs(TRAINED_MODEL_WEIGHTS_PATH, exist_ok=True)
     os.makedirs(TRAINED_MODEL_INFO_PATHS, exist_ok=True)
-    info_path = Path(os.path.join(TRAINED_MODEL_INFO_PATHS, model_info.registry_key + ".json"))
-    model_path = Path(os.path.join(TRAINED_MODEL_WEIGHTS_PATH, model_info.registry_key + ".pth"))
+
+    # Save these paths for later
+    info_path = Path(str(os.path.join(TRAINED_MODEL_INFO_PATHS, model_info.registry_key + ".json")))
+    model_path = Path(str(os.path.join(TRAINED_MODEL_WEIGHTS_PATH, model_info.registry_key + ".pth")))
 
     # Update the task status separately
     task.update_state(state='STARTED')
@@ -51,13 +79,14 @@ def train_model_logic(task, model, model_info: SemanticSegmentationModels, req: 
         # Set the device
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        # Load the loss
         match req.loss:
             case "cross_entropy":
                 criterion = torch.nn.CrossEntropyLoss().to(device)
             case _:
                 raise ValueError(f"Unknown loss type '{req.loss}'")
 
-        # Load the model
+        # Send model to device
         model.to(device)
 
         # This could also be user-specified, but it requires a way more sophisticated frontend. Might be future work.
@@ -68,8 +97,9 @@ def train_model_logic(task, model, model_info: SemanticSegmentationModels, req: 
         )
         lr_scheduler = ReduceLROnPlateau(optimizer)
 
+        # Training run
         for epoch in range(progress.epoch_count, req.num_epochs):
-            # 1. Update Celery State (for polling)
+            # 1. Update Celery State
             current_meta = progress.model_dump()
             task.update_state(state='PROGRESS', meta=current_meta)
 

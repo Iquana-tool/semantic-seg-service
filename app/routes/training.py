@@ -4,24 +4,16 @@ from fastapi import APIRouter
 from iquana_toolbox.schemas.training import SemanticTrainingRequest
 from app.state import MODEL_REGISTRY
 from celery_app import celery_app
-from celery_tasks.training import train_model_task
 
 router = APIRouter(prefix="/training", tags=["training"])
 
 @router.post("/start")
 async def start_training(req: SemanticTrainingRequest):
-    model_info = MODEL_REGISTRY.get_model_info(req.model_registry_key)
-    model_loader = MODEL_REGISTRY.get_model_loader(req.model_registry_key)
-    if model_info.pretrained and not model_info.finetunable:
-        return {
-            "success": False,
-            "message": f"Model {req.model_registry_key} already trained and not finetunable."
-        }
-    new_identifier = MODEL_REGISTRY.get_new_key()
-    new_model_info = model_info.copy()
-    new_model_info.registry_key = new_identifier
-    new_model_info.label_hierarchy = req.label_hierarchy
-    task: AsyncResult = train_model_task.delay(model_loader.load_model(), new_model_info, req)
+    task = celery_app.send_task(
+        "semantic_segmentation.train_model",
+        args=[req],
+        queue="semantic_queue"
+    )
     return {
         "success": True,
         "message": "Training task enqueued.",

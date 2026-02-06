@@ -1,13 +1,14 @@
 from logging import getLogger
-
-import torch
-from torchvision.io import read_image
-from torchvision.transforms import Resize
-
-from app.state import MODEL_REGISTRY
+from iquana_toolbox.schemas.service_requests import MultiSemanticSegmentationRequest, SemanticSegmentationRequest
+from celery_app import celery_app
 
 logger = getLogger(__name__)
 
 
-async def inference_logic(images, model_registry_key):
+async def inference(request: SemanticSegmentationRequest):
+    raise NotImplementedError()
+
+
+@celery_app.task(name="semantic_segmentation.inference.batched")
+async def inference_multi(request: MultiSemanticSegmentationRequest):
     raise NotImplementedError("This method is not implemented.")
