@@ -5,8 +5,8 @@ from typing import Tuple
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
-from torchvision.transforms import RandomCrop
-from torch.utils.data import DataLoader, random_split
+from torchvision.transforms import RandomCrop, ColorJitter
+from torch.utils.data import DataLoader, random_split, Subset
 from torch.utils.data import Dataset
 from torchvision.io import read_image
 
@@ -45,7 +45,7 @@ def augment(augmentations: Augmentations, img: torch.Tensor, mask: torch.Tensor)
         img = TF.vflip(img)
         mask = TF.vflip(mask)
     if augmentations.color_jitter is not None:
-        img = T.ColorJitter(
+        img = ColorJitter(
             brightness=augmentations.color_jitter[0],
             contrast=augmentations.color_jitter[1],
             saturation=augmentations.color_jitter[2],
@@ -56,15 +56,16 @@ def augment(augmentations: Augmentations, img: torch.Tensor, mask: torch.Tensor)
 
 class SegmentationTensorDataset(Dataset):
     """Dataset class."""
+
     def __init__(
-        self,
-        image_urls: list[str],
-        mask_urls: list[str],
-        augmentations: Augmentations,
-        eval: bool = False,
-        mean: list[float] = None,
-        std: list[float] = None,
-        image_size: Tuple[int, int] = (256, 256),
+            self,
+            image_urls: list[str],
+            mask_urls: list[str],
+            augmentations: Augmentations,
+            eval: bool = False,
+            mean: list[float] = None,
+            std: list[float] = None,
+            image_size: Tuple[int, int] = (256, 256),
     ):
         """
         Args:
@@ -86,7 +87,7 @@ class SegmentationTensorDataset(Dataset):
         self.image_size = list(image_size)
 
     def __len__(self):
-        return len(self.image_filenames)
+        return len(self.image_urls)
 
     def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor]:
         image_url = self.image_urls[idx]
@@ -101,9 +102,13 @@ class SegmentationTensorDataset(Dataset):
         elif image.shape[0] not in [1, 3]:
             image = image.permute(2, 0, 1)
 
+        # Ensure mask is HW
+        if mask.ndim > 2:
+            mask = mask.squeeze()
+
         # Apply augmentations if not eval
         if not self.eval:
-            image, mask = self.augmentations(image, mask)
+            image, mask = augment(self.augmentations, image, mask)
 
         # Resize (after augmentations)
         image = TF.resize(image, self.image_size, interpolation=TF.InterpolationMode.BILINEAR)
@@ -127,50 +132,47 @@ def get_dataloader(
         min_samples_for_split: int = 10,
         seed: int = 42
 ) -> tuple:
-    dataset = SegmentationTensorDataset(
+    # 1. Create the base dataset (initially without augmentations)
+    full_dataset = SegmentationTensorDataset(
         image_urls=image_urls,
         mask_urls=mask_urls,
-        augmentations=augmentations,
+        augmentations=None,  # Stay clean for now
         image_size=image_size,
     )
+    dataset_size = len(image_urls)
 
-    # 1. Handle datasets too small to split
-    if len(dataset) < min_samples_for_split:
-        loader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=shuffle,
-            num_workers=num_workers,
-            pin_memory=True,
+    # 1. Handle tiny datasets
+    if dataset_size < min_samples_for_split:
+        train_ds = SegmentationTensorDataset(
+            image_urls, mask_urls, augmentations, eval=False, image_size=image_size
         )
-        return loader, None
+        return DataLoader(train_ds, batch_size=batch_size, shuffle=shuffle), None
 
-    # 2. Calculate lengths for split
-    val_size = int(len(dataset) * val_ratio)
-    train_size = len(dataset) - val_size
+    # 2. Create split indices
+    indices = list(range(dataset_size))
+    val_size = max(1, int(dataset_size * val_ratio))
+    train_size = dataset_size - val_size
 
-    # 3. Perform the split with a generator for reproducibility
-    generator = torch.Generator().manual_seed(seed)
-    train_dataset, val_dataset = random_split(
-        dataset, [train_size, val_size], generator=generator
+    # Use torch.random for reproducibility
+    train_indices, val_indices = random_split(
+        indices, [train_size, val_size],
+        generator=torch.Generator().manual_seed(seed)
     )
 
-    # 4. Create the dataloaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=True
+    # 3. Create two distinct dataset instances
+    # This ensures train gets augmentations and val gets eval=True
+    train_dataset = Subset(
+        SegmentationTensorDataset(image_urls, mask_urls, augmentations, eval=False, image_size=image_size),
+        train_indices
+    )
+    val_dataset = Subset(
+        SegmentationTensorDataset(image_urls, mask_urls, augmentations, eval=True, image_size=image_size),
+        val_indices
     )
 
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,  # Usually don't shuffle validation
-        num_workers=num_workers,
-        pin_memory=True
-    )
+    # 4. Create Dataloaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers,
+                              pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
 
     return train_loader, val_loader
-

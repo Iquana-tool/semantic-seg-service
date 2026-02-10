@@ -16,8 +16,9 @@ from training.dataloader import get_dataloader
 from training.metrics import dice_coeff, iou_score
 
 
-@celery_app.task(name="semantic_segmentation.train_model")
-def train_model_logic(task, req: SemanticTrainingRequest):
+@celery_app.task(name="semantic_segmentation.train_model", bind=True)
+def train_model_logic(task, req):
+    req = SemanticTrainingRequest.model_validate_json(req)
     # Load everything from disk and model registry
     model_info = MODEL_REGISTRY.get_model_info(req.model_registry_key)
     model_loader = MODEL_REGISTRY.get_model_loader(req.model_registry_key)
@@ -32,7 +33,6 @@ def train_model_logic(task, req: SemanticTrainingRequest):
             "message": f"Model {req.model_registry_key} already trained and not finetunable."
         }
 
-
     # Set new fields
     new_identifier = MODEL_REGISTRY.get_new_key()
     model_info = model_info.copy()
@@ -40,10 +40,13 @@ def train_model_logic(task, req: SemanticTrainingRequest):
     model_info.label_hierarchy = req.label_hierarchy
 
     # Load the model
-    model = model_loader.load_model()
+    model = model_loader.load_model(
+        in_channels=3,
+        classes=len(list(model_info.label_hierarchy.id_to_label_object.keys()))
+    )
 
     # Load redis client and task_id
-    redis_client = redis.from_url(REDIS_URL+ "/0", decode_responses=True)
+    redis_client = redis.from_url(REDIS_URL + "/0", decode_responses=True)
     task_id = task.request.id
 
     # Make necessary directories
@@ -60,13 +63,12 @@ def train_model_logic(task, req: SemanticTrainingRequest):
     # Init these vars here so you dont run into errors on error catching
     train_metrics, val_metrics, epoch, progress = None, None, None, None
 
-
     try:
         # Load the dataloaders
         train_loader, val_loader = get_dataloader(
             req.image_urls,
             req.mask_urls,
-            batch_size=req.hyperparams.batch_size,
+            batch_size=req.hyper_params.batch_size,
             augmentations=req.augmentations,
             num_workers=6
         )
@@ -128,27 +130,25 @@ def train_model_logic(task, req: SemanticTrainingRequest):
                 torch.save(model, model_path)
 
             # Early stopping
-            if epoch - progress.best_epoch > req.hyperparams.early_stopping_patience > 0:
+            if epoch - progress.best_epoch > req.hyper_params.early_stopping_patience > 0:
                 break
         task.update_state(state='SUCCESS')
         redis_client.publish(f"task_progress_{task_id}",
                              json.dumps({"state": "SUCCESS", "data": progress.model_dump()}))
-    except TaskRevokedError:
-        task.update_state(state='STOPPED')
-        redis_client.publish(f"task_progress_{task_id}",
-                             json.dumps({"state": "STOPPED", "data": progress.model_dump()}))
     except Exception as e:
-        task.update_state(state='FAILURE', meta={'error': str(e)})
         redis_client.publish(f"task_progress_{task_id}",
-                             json.dumps({"state": "FAILED", "data": progress.model_dump()}))
+                             json.dumps({
+                                 "state": "FAILED",
+                                 "data": progress.model_dump() if progress is not None else None
+                             }))
         raise e
     finally:
-        # Close everything and save
-        task.update_state(
-            meta=progress.model_dump()
-        )
-        model_info.progress = progress
-        info_path.write_text(model_info.model_dump_json(indent=4))
+        # Finally save the model if we actually trained something
+        # For this, check whether a model has been saved!
+        if os.path.exists(model_path):
+            model_info.progress = progress
+            info_path.write_text(model_info.model_dump_json(indent=4))
+
 
 def run_one_epoch(model, loader, optimizer, criterion, device, epoch, train=True):
     """ Run one training/validation epoch. Save intermediate results to a tensorboard writer."""
@@ -159,13 +159,12 @@ def run_one_epoch(model, loader, optimizer, criterion, device, epoch, train=True
         model.train()
     else:
         model.eval()
-    added = False
     for imgs, masks in loader:
         imgs, masks = imgs.to(device), masks.to(device)
         if train:
             optimizer.zero_grad()
         outputs = model(imgs)
-        loss = criterion(outputs, masks)
+        loss = criterion(outputs.float(), masks.long())
         if train:
             loss.backward()
             optimizer.step()

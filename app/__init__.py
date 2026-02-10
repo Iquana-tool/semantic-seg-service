@@ -55,6 +55,7 @@ def create_app():
     app.include_router(models.router)
     app.include_router(models.session_router)
     app.include_router(inference.router)
+    app.include_router(inference.session_router)
     app.include_router(images.router)
     app.include_router(images.session_router)
 

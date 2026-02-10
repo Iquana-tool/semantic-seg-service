@@ -29,7 +29,7 @@ class BaseModelLoader(ModelLoader):
     def load_model(self, **kwargs):
         combined_kwargs = self.kwargs.copy()
         combined_kwargs.update(kwargs)
-        return self.loader_function(combined_kwargs)
+        return self.loader_function(**combined_kwargs)
 
 
 class PathModelLoader(ModelLoader):
@@ -47,4 +47,5 @@ class PathModelLoader(ModelLoader):
         return os.path.exists(self.path_to_model)
 
     def load_model(self, **kwargs):
-        return torch.load(self.path_to_model, **self.kwargs)
+        print(f"Loading model from  {self.path_to_model}")
+        return torch.load(self.path_to_model, weights_only=False, **self.kwargs)

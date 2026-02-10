@@ -6,3 +6,10 @@ celery_app = Celery(
     broker=f"{REDIS_URL}/0",
     backend=f"{REDIS_URL}/1"
 )
+
+import training
+import training.core
+import training.dataloader
+import training.metrics
+import inference.core
+import app.state
