@@ -34,6 +34,7 @@ class ModelRegistry:
             ),
             model_loader=BaseModelLoader(
                 loader_function=smp.Unet,
+                kwargs=dict(encoder_name="resnet34", encoder_weights="imagenet")
             ),
         )
 
@@ -52,6 +53,7 @@ class ModelRegistry:
             ),
             model_loader=BaseModelLoader(
                 loader_function=smp.UnetPlusPlus,
+                kwargs=dict(encoder_name="resnet34", encoder_weights="imagenet")
             ),
         )
 
@@ -70,6 +72,7 @@ class ModelRegistry:
             ),
             model_loader=BaseModelLoader(
                 loader_function=smp.DeepLabV3,
+                kwargs=dict(encoder_name="resnet34", encoder_weights="imagenet")
             ),
         )
 
