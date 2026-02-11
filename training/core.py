@@ -147,6 +147,7 @@ def train_model_logic(task, req):
         # For this, check whether a model has been saved!
         if os.path.exists(model_path):
             model_info.progress = progress
+            model_info.pretrained = True
             info_path.write_text(model_info.model_dump_json(indent=4))
 
 
