@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
 def create_app():
     logger.debug("Creating FastAPI application")
     # Load environment variables
-    load_dotenv()
+    load_dotenv(override=True)
 
     # Get allowed origins from environment variable
     allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000").split(",")

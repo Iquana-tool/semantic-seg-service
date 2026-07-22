@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 from celery import Celery
 from paths import REDIS_URL
 

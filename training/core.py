@@ -42,7 +42,7 @@ def train_model_logic(task, req):
     # Load the model
     model = model_loader.load_model(
         in_channels=3,
-        classes=len(list(model_info.label_hierarchy.id_to_label_object.keys()))
+        classes=len(list(model_info.label_hierarchy.id_to_label_object.keys())) + 1
     )
 
     # Load redis client and task_id
